@@ -532,7 +532,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
 
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "EN YÜKSEK PİYASA OLASILIĞI",
+                    "ORANLARA GÖRE EN YÜKSEK OLASILIK",
                     color = Gold,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold

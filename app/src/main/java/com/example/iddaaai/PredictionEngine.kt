@@ -26,29 +26,6 @@ object PredictionEngine {
         return values.map { it?.let { value -> value / total * 100.0 } }
     }
 
-    private fun formStrength(matches: List<TeamFormMatch>): Double? {
-        val recent = matches
-            .sortedBy { it.date }
-            .takeLast(5)
-
-        if (recent.isEmpty()) return null
-
-        val points = recent.fold(0.0) { total, match ->
-            total + when (match.result) {
-                "G" -> 3.0
-                "B" -> 1.0
-                else -> 0.0
-            }
-        }
-
-        val pointsRate = points / (recent.size * 3.0)
-        val goalDifference = recent.sumOf {
-            it.goalsFor - it.goalsAgainst
-        }.toDouble() / recent.size
-
-        return (pointsRate * 0.7 +
-            ((goalDifference / 2.0).coerceIn(-1.0, 1.0) * 0.3))
-    }
 
     fun calculate(
         odds: MatchOdds,
@@ -62,27 +39,7 @@ object PredictionEngine {
             probability(odds.away)
         )
 
-        val homeStrength = formStrength(homeForm)
-        val awayStrength = formStrength(awayForm)
-
-        val adjustedResult = if (
-            homeStrength != null && awayStrength != null &&
-            result.all { it != null }
-        ) {
-            val difference = homeStrength - awayStrength
-
-            val homeFactor = kotlin.math.exp(0.35 * difference + 0.10)
-            val drawFactor = kotlin.math.exp(-0.10 * kotlin.math.abs(difference))
-            val awayFactor = kotlin.math.exp(-0.35 * difference)
-
-            normalize(
-                result[0]!! * homeFactor,
-                result[1]!! * drawFactor,
-                result[2]!! * awayFactor
-            )
-        } else {
-            result
-        }
+        val adjustedResult = result
 
         val goals = normalize(
             probability(odds.under25),
