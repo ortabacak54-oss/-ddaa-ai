@@ -40,7 +40,7 @@ data class MatchOdds(
 
 object LiveApi {
     private const val API_URL =
-        "https://script.google.com/macros/s/AKfycbzDzTZeS67QAxqd5jkDohrsmfvWjLJWoT3z5KtXjyPU2RXznvw5eYy7Tts41_X2Rxd2/exec"
+        "https://script.google.com/macros/s/AKfycbzNP8OrklfyhUAfat0hVzalNhNtKmM-rVu-r8Wd0qVm3KOMO1DJvEbR2lDQdXRV-OSs/exec"
 
     private fun request(url: String): JSONObject {
         val separator = if (url.contains("?")) "&" else "?"
