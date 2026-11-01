@@ -244,6 +244,12 @@ private fun LiveMatchCard(m: LiveMatch) {
     var odds: MatchOdds? by remember(m.id) { mutableStateOf<MatchOdds?>(null) }
     var oddsLoading: Boolean by remember(m.id) { mutableStateOf(false) }
     var oddsError: String by remember(m.id) { mutableStateOf("") }
+
+    var homeForm by remember(m.id) { mutableStateOf<List<TeamFormMatch>>(emptyList()) }
+    var awayForm by remember(m.id) { mutableStateOf<List<TeamFormMatch>>(emptyList()) }
+    var formLoading by remember(m.id) { mutableStateOf(false) }
+    var formError by remember(m.id) { mutableStateOf("") }
+    var formLoaded by remember(m.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Card(
@@ -278,6 +284,56 @@ private fun LiveMatchCard(m: LiveMatch) {
             Spacer(Modifier.height(9.dp))
             Text("Maç durumu: ${m.status}",
                 color = TextMuted, fontSize = 10.sp)
+
+            Spacer(Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        formLoading = true
+                        formError = ""
+                        try {
+                            val results = withContext(Dispatchers.IO) {
+                                Pair(
+                                    LiveApi.getTeamForm(m.homeId),
+                                    LiveApi.getTeamForm(m.awayId)
+                                )
+                            }
+                            homeForm = results.first
+                            awayForm = results.second
+                            formLoaded = true
+                        } catch (e: Exception) {
+                            formError = e.message ?: "Form verisi alınamadı"
+                        } finally {
+                            formLoading = false
+                        }
+                    }
+                },
+                enabled = !formLoading && m.homeId.isNotBlank() && m.awayId.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Surface2,
+                    contentColor = GoldLight
+                )
+            ) {
+                Text(
+                    if (formLoading) "Formlar yükleniyor..."
+                    else if (formLoaded) "Formları Yenile"
+                    else "Takım Formlarını Getir",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (formError.isNotBlank()) {
+                Text(formError, color = Red, fontSize = 11.sp)
+            }
+
+            if (formLoaded) {
+                Spacer(Modifier.height(10.dp))
+                TeamFormSection(m.home, homeForm)
+                Spacer(Modifier.height(8.dp))
+                TeamFormSection(m.away, awayForm)
+            }
 
             Spacer(Modifier.height(12.dp))
 
@@ -402,6 +458,49 @@ private fun LiveMatchCard(m: LiveMatch) {
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TeamFormSection(teamName: String, matches: List<TeamFormMatch>) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Surface2, RoundedCornerShape(10.dp))
+            .padding(10.dp)
+    ) {
+        Text(teamName, color = GoldLight, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        if (matches.isEmpty()) {
+            Text("Form maçı bulunamadı.", color = TextMuted, fontSize = 10.sp)
+        } else {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(top = 7.dp)
+            ) {
+                matches.takeLast(5).forEach { match ->
+                    val resultColor = when (match.result) {
+                        "G" -> Green
+                        "M" -> Red
+                        else -> Gold
+                    }
+                    Text(
+                        match.result,
+                        color = Black,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .background(resultColor, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+            Text(
+                "Son ${matches.size} maç • Attığı ${matches.sumOf { it.goalsFor }} gol • Yediği ${matches.sumOf { it.goalsAgainst }} gol",
+                color = TextMuted,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(top = 6.dp)
+            )
         }
     }
 }

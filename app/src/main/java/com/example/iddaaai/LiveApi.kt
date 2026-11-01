@@ -12,7 +12,20 @@ data class LiveMatch(
     val kickoff: String,
     val status: String,
     val minute: String,
-    val score: String
+    val score: String,
+    val homeId: String = "",
+    val awayId: String = ""
+)
+
+data class TeamFormMatch(
+    val id: String,
+    val date: String,
+    val league: String,
+    val opponent: String,
+    val venue: String,
+    val goalsFor: Int,
+    val goalsAgainst: Int,
+    val result: String
 )
 
 data class MatchOdds(
@@ -72,6 +85,32 @@ object LiveApi {
                     homeScore == null || homeScore == "null" ||
                     awayScore == null || awayScore == "null"
                 ) "- : -" else "$homeScore : $awayScore"
+            )
+        }
+    }
+
+
+    fun getTeamForm(teamId: String): List<TeamFormMatch> {
+        val json = request("$API_URL?action=form&team=$teamId")
+
+        if (json.optString("durum") != "aktif") {
+            throw Exception(json.optString("mesaj", "Form verisi alınamadı"))
+        }
+
+        val array = json.optJSONArray("maclar") ?: return emptyList()
+
+        return (0 until array.length()).map { i ->
+            val item = array.getJSONObject(i)
+
+            TeamFormMatch(
+                id = item.optString("id"),
+                date = item.optString("tarih"),
+                league = item.optString("lig"),
+                opponent = item.optString("rakip"),
+                venue = item.optString("saha"),
+                goalsFor = item.optInt("atilanGol"),
+                goalsAgainst = item.optInt("yenilenGol"),
+                result = item.optString("sonuc")
             )
         }
     }
