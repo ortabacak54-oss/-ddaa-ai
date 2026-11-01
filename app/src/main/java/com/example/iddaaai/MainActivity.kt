@@ -331,6 +331,76 @@ private fun LiveMatchCard(m: LiveMatch) {
                 Text("KARŞILIKLI GOL", color = Gold,
                     fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 OddsRow("KG Var", o.bttsYes, "KG Yok", o.bttsNo)
+
+                val prediction = PredictionEngine.calculate(o)
+
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = Surface2)
+
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "IDDAA AI ANALİZİ",
+                    color = GoldLight,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+
+                Spacer(Modifier.height(10.dp))
+                Text("TAHMİN OLASILIKLARI",
+                    color = TextMuted, fontSize = 10.sp)
+
+                @Composable
+                fun showProbability(label: String, value: Double?) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(label, color = TextMain,
+                            fontSize = 12.sp,
+                            modifier = Modifier.weight(1f))
+                        Text(
+                            value?.let { "%.1f%%".format(java.util.Locale.US, it) }
+                                ?: "Veri yok",
+                            color = GoldLight,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                showProbability("MS 1", prediction.home)
+                showProbability("Beraberlik", prediction.draw)
+                showProbability("MS 2", prediction.away)
+                showProbability("2.5 Alt", prediction.under25)
+                showProbability("2.5 Üst", prediction.over25)
+                showProbability("KG Var", prediction.bttsYes)
+                showProbability("KG Yok", prediction.bttsNo)
+
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "EN YÜKSEK PİYASA OLASILIĞI",
+                    color = Gold,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    prediction.bestPick +
+                        (prediction.confidence?.let {
+                            " • %.1f%%".format(java.util.Locale.US, it)
+                        } ?: ""),
+                    color = GoldLight,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+
+                Text(
+                    "Bu yüzdeler bahis oranlarından hesaplanan marjı düzeltilmiş piyasa olasılıklarıdır; garanti veya bağımsız AI tahmini değildir.",
+                    color = TextMuted,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
             }
         }
     }
