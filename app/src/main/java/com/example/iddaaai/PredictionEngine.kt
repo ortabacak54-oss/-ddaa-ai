@@ -23,18 +23,66 @@ object PredictionEngine {
     private fun normalize(vararg values: Double?): List<Double?> {
         val total = values.filterNotNull().sum()
         if (total <= 0.0) return values.map { null }
-
-        return values.map {
-            it?.let { value -> value / total * 100.0 }
-        }
+        return values.map { it?.let { value -> value / total * 100.0 } }
     }
 
-    fun calculate(odds: MatchOdds): MarketPrediction {
+    private fun formStrength(matches: List<TeamFormMatch>): Double? {
+        val recent = matches
+            .sortedBy { it.date }
+            .takeLast(5)
+
+        if (recent.isEmpty()) return null
+
+        val points = recent.sumOf {
+            when (it.result) {
+                "G" -> 3
+                "B" -> 1
+                else -> 0
+            }
+        }.toDouble()
+
+        val pointsRate = points / (recent.size * 3.0)
+        val goalDifference = recent.sumOf {
+            it.goalsFor - it.goalsAgainst
+        }.toDouble() / recent.size
+
+        return (pointsRate * 0.7 +
+            ((goalDifference / 2.0).coerceIn(-1.0, 1.0) * 0.3))
+    }
+
+    fun calculate(
+        odds: MatchOdds,
+        homeForm: List<TeamFormMatch> = emptyList(),
+        awayForm: List<TeamFormMatch> = emptyList()
+    ): MarketPrediction {
+
         val result = normalize(
             probability(odds.home),
             probability(odds.draw),
             probability(odds.away)
         )
+
+        val homeStrength = formStrength(homeForm)
+        val awayStrength = formStrength(awayForm)
+
+        val adjustedResult = if (
+            homeStrength != null && awayStrength != null &&
+            result.all { it != null }
+        ) {
+            val difference = homeStrength - awayStrength
+
+            val homeFactor = kotlin.math.exp(0.35 * difference + 0.10)
+            val drawFactor = kotlin.math.exp(-0.10 * kotlin.math.abs(difference))
+            val awayFactor = kotlin.math.exp(-0.35 * difference)
+
+            normalize(
+                result[0]!! * homeFactor,
+                result[1]!! * drawFactor,
+                result[2]!! * awayFactor
+            )
+        } else {
+            result
+        }
 
         val goals = normalize(
             probability(odds.under25),
@@ -47,9 +95,9 @@ object PredictionEngine {
         )
 
         val candidates = listOf(
-            "MS 1" to result[0],
-            "Beraberlik" to result[1],
-            "MS 2" to result[2],
+            "MS 1" to adjustedResult[0],
+            "Beraberlik" to adjustedResult[1],
+            "MS 2" to adjustedResult[2],
             "2.5 Alt" to goals[0],
             "2.5 Üst" to goals[1],
             "KG Var" to btts[0],
@@ -59,9 +107,9 @@ object PredictionEngine {
         val best = candidates.maxByOrNull { it.second!! }
 
         return MarketPrediction(
-            home = result[0],
-            draw = result[1],
-            away = result[2],
+            home = adjustedResult[0],
+            draw = adjustedResult[1],
+            away = adjustedResult[2],
             under25 = goals[0],
             over25 = goals[1],
             bttsYes = btts[0],

@@ -388,7 +388,7 @@ private fun LiveMatchCard(m: LiveMatch) {
                     fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 OddsRow("KG Var", o.bttsYes, "KG Yok", o.bttsNo)
 
-                val prediction = PredictionEngine.calculate(o)
+                val prediction = PredictionEngine.calculate(o, homeForm, awayForm)
 
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider(color = Surface2)
