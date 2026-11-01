@@ -295,6 +295,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
     var odds: MatchOdds? by remember(m.id) { mutableStateOf<MatchOdds?>(null) }
     var oddsLoading: Boolean by remember(m.id) { mutableStateOf(false) }
     var oddsError: String by remember(m.id) { mutableStateOf("") }
+    var oddsExpanded by remember(m.id) { mutableStateOf(false) }
 
     var homeForm by remember(m.id) { mutableStateOf<List<TeamFormMatch>>(emptyList()) }
     var awayForm by remember(m.id) { mutableStateOf<List<TeamFormMatch>>(emptyList()) }
@@ -464,6 +465,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 AverageSection(m.away, awayStatsAverage)
                 Spacer(Modifier.height(12.dp))
+                odds?.let { o ->
                 Column(
                     Modifier.fillMaxWidth()
                         .background(Surface2, RoundedCornerShape(10.dp))
@@ -652,6 +654,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                     fontSize = 10.sp,
                     modifier = Modifier.padding(top = 8.dp)
                 )
+                }
             }
         }
     }
