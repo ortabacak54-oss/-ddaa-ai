@@ -371,7 +371,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                             awayForm = results.second
                             formLoaded = true
                         } catch (e: Exception) {
-                            formError = e.message ?: "Form verisi alınamadı"
+                            formError = "Form verisi alınamadı: API ücretsiz planı güncel sezonu desteklemiyor. Tahminler oranlara göre hesaplanıyor."
                         } finally {
                             formLoading = false
                         }
