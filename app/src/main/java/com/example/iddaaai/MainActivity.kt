@@ -371,13 +371,13 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                             awayForm = results.second
                             formLoaded = true
                         } catch (e: Exception) {
-                            formError = "Form verisi alınamadı: API ücretsiz planı güncel sezonu desteklemiyor. Tahminler oranlara göre hesaplanıyor."
+                            formError = "Form verisi alınamadı: ${e.message}"
                         } finally {
                             formLoading = false
                         }
                     }
                 },
-                enabled = false,
+                enabled = !formLoading,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Surface2,
@@ -385,7 +385,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                 )
             ) {
                 Text(
-                    "Takım Formu Geçici Olarak Kapalı",
+                    "TAKIM FORMUNU GETİR",
                     fontWeight = FontWeight.Bold
                 )
             }
