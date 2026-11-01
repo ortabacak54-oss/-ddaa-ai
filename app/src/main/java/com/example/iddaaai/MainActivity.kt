@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -89,6 +90,7 @@ private fun IddaaApp(context: Context) {
     val prefs = remember { context.getSharedPreferences("iddaa_ai", Context.MODE_PRIVATE) }
     var tab by remember { mutableStateOf("Maçlar") }
     var filter by remember { mutableStateOf("Tümü") }
+    var searchQuery by remember { mutableStateOf("") }
     var stakeText by remember { mutableStateOf("100") }
     var picks by remember { mutableStateOf(loadPicks(prefs)) }
     var tracked by remember { mutableStateOf(loadTracked(prefs)) }
@@ -164,11 +166,36 @@ private fun IddaaApp(context: Context) {
                         }
                     }
 
-                    val shown = liveMatches.filter {
-                        filter == "Tümü" ||
-                        (filter == "Süper Lig" && it.league.contains("Süper Lig", true)) ||
-                        (filter == "Avrupa" && !it.league.contains("Süper Lig", true))
-                    }
+                    OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 6.dp),
+                    placeholder = { Text("Takım veya lig ara...") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = Surface2,
+                        focusedTextColor = TextMain,
+                        unfocusedTextColor = TextMain,
+                        cursorColor = Gold
+                    )
+                )
+
+                val shown = liveMatches.filter { match ->
+                    val leagueMatch = filter == "Tümü" ||
+                        (filter == "Süper Lig" && match.league.contains("Süper Lig", true)) ||
+                        (filter == "Avrupa" && !match.league.contains("Süper Lig", true))
+
+                    val queryMatch = searchQuery.isBlank() ||
+                        match.home.contains(searchQuery.trim(), true) ||
+                        match.away.contains(searchQuery.trim(), true) ||
+                        match.league.contains(searchQuery.trim(), true)
+
+                    leagueMatch && queryMatch
+                }
 
                     LazyColumn(
                         contentPadding = PaddingValues(
@@ -211,8 +238,14 @@ private fun IddaaApp(context: Context) {
     }
 }
 
+
 @Composable
 private fun LiveMatchCard(m: LiveMatch) {
+    var odds by remember(m.id) { mutableStateOf<MatchOdds?>(null) }
+    var oddsLoading by remember(m.id) { mutableStateOf(false) }
+    var oddsError by remember(m.id) { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
     Card(
         colors = CardDefaults.cardColors(containerColor = SurfaceDark),
         shape = RoundedCornerShape(18.dp)
@@ -229,21 +262,98 @@ private fun LiveMatchCard(m: LiveMatch) {
                     color = TextMuted, fontSize = 10.sp
                 )
             }
+
             Spacer(Modifier.height(12.dp))
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(m.home, color = TextMain, fontWeight = FontWeight.Bold,
                     fontSize = 14.sp, modifier = Modifier.weight(1f))
-                Text(m.score, color = GoldLight, fontWeight = FontWeight.ExtraBold,
-                    fontSize = 17.sp)
+                Text(m.score, color = GoldLight,
+                    fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
                 Text(m.away, color = TextMain, fontWeight = FontWeight.Bold,
                     fontSize = 14.sp, textAlign = TextAlign.End,
                     modifier = Modifier.weight(1f))
             }
+
             Spacer(Modifier.height(9.dp))
-            Text("Maç durumu: ${m.status}", color = TextMuted, fontSize = 10.sp)
-            Text("Tahmin ve oran verisi henüz bağlanmadı.",
-                color = Gold, fontSize = 10.sp,
-                modifier = Modifier.padding(top = 7.dp))
+            Text("Maç durumu: ${m.status}",
+                color = TextMuted, fontSize = 10.sp)
+
+            Spacer(Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        oddsLoading = true
+                        oddsError = ""
+                        try {
+                            odds = withContext(Dispatchers.IO) {
+                                LiveApi.getOdds(m.id)
+                            }
+                        } catch (e: Exception) {
+                            oddsError = e.message ?: "Oranlar alınamadı"
+                        } finally {
+                            oddsLoading = false
+                        }
+                    }
+                },
+                enabled = !oddsLoading,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Gold,
+                    contentColor = Black
+                )
+            ) {
+                Text(
+                    if (oddsLoading) "Oranlar yükleniyor..."
+                    else if (odds != null) "Oranları Yenile"
+                    else "Oranları Getir",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (oddsError.isNotBlank()) {
+                Text(oddsError, color = Color.Red, fontSize = 11.sp)
+            }
+
+            odds?.let { o ->
+                Spacer(Modifier.height(12.dp))
+                Text("MAÇ SONUCU (1X2)", color = Gold,
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                OddsRow("MS 1", o.home, "X", o.draw, "MS 2", o.away)
+
+                Spacer(Modifier.height(10.dp))
+                Text("2.5 GOL ALT / ÜST", color = Gold,
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                OddsRow("Alt 2.5", o.under25, "Üst 2.5", o.over25)
+
+                Spacer(Modifier.height(10.dp))
+                Text("KARŞILIKLI GOL", color = Gold,
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                OddsRow("KG Var", o.bttsYes, "KG Yok", o.bttsNo)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OddsRow(vararg values: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        values.toList().chunked(2).forEach { pair ->
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(Surface2, RoundedCornerShape(8.dp))
+                    .padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(pair[0], color = TextMuted, fontSize = 10.sp)
+                Text(pair.getOrElse(1) { "-" }, color = GoldLight,
+                    fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
