@@ -599,6 +599,26 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                     fontSize = 26.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "TAKIMLARIN KARŞILIKLI MAÇLARI",
+                    color = Gold,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "En sık skor: ${prediction.mostCommonH2HScore} (${prediction.mostCommonH2HCount} kez)",
+                    color = GoldLight,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (prediction.h2hScores.isEmpty()) "Son form verilerinde karşılıklı maç bulunamadı"
+                    else prediction.h2hScores.joinToString("  • "),
+                    color = TextMuted,
+                    fontSize = 11.sp
+                )
+
                 Text(
                     "Beklenen gol: %.2f - %.2f • Skor olasılığı: %.1f%%".format(
                         java.util.Locale.US,

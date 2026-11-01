@@ -17,7 +17,10 @@ data class MarketPrediction(
     val predictedScore: String,
     val homeExpectedGoals: Double,
     val awayExpectedGoals: Double,
-    val scoreProbability: Double
+    val scoreProbability: Double,
+    val h2hScores: List<String> = emptyList(),
+    val mostCommonH2HScore: String = "-",
+    val mostCommonH2HCount: Int = 0
 )
 
 object PredictionEngine {
@@ -173,7 +176,10 @@ object PredictionEngine {
             predictedScore = "$predictedHomeGoals-$predictedAwayGoals",
             homeExpectedGoals = homeXg,
             awayExpectedGoals = awayXg,
-            scoreProbability = selectedScore.third * 100.0
+            scoreProbability = selectedScore.third * 100.0,
+            h2hScores = h2hScores.map { "${it.second}-${it.third}" },
+            mostCommonH2HScore = commonH2H?.key?.let { "${it.first}-${it.second}" } ?: "-",
+            mostCommonH2HCount = commonH2H?.value ?: 0
         )
     }
 }
