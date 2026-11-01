@@ -377,7 +377,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                         }
                     }
                 },
-                enabled = !formLoading && m.homeId.isNotBlank() && m.awayId.isNotBlank(),
+                enabled = false,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Surface2,
@@ -385,9 +385,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                 )
             ) {
                 Text(
-                    if (formLoading) "Formlar yükleniyor..."
-                    else if (formLoaded) "Formları Yenile"
-                    else "Takım Formlarını Getir",
+                    "Takım Formu Geçici Olarak Kapalı",
                     fontWeight = FontWeight.Bold
                 )
             }
