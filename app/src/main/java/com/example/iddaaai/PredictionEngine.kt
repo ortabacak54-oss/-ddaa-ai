@@ -79,7 +79,19 @@ object PredictionEngine {
             }
         }
 
-        val bestScore = scoreMatrix.maxByOrNull { it.third }!!
+        fun goalsFromExpected(xg: Double): Int = when {
+            xg < 0.75 -> 0
+            xg < 1.50 -> 1
+            xg < 2.30 -> 2
+            xg < 3.00 -> 3
+            else -> 4
+        }
+
+        val predictedHomeGoals = goalsFromExpected(homeXg)
+        val predictedAwayGoals = goalsFromExpected(awayXg)
+        val selectedScore = scoreMatrix.first {
+            it.first == predictedHomeGoals && it.second == predictedAwayGoals
+        }
         val totalScoreProbability = scoreMatrix.sumOf { it.third }.coerceAtLeast(0.000001)
 
         val modelHome = scoreMatrix.filter { it.first > it.second }.sumOf { it.third } / totalScoreProbability
@@ -134,10 +146,10 @@ object PredictionEngine {
             bttsNo = finalBtts[1],
             bestPick = best?.first ?: "Yeterli veri yok",
             confidence = best?.second,
-            predictedScore = "${bestScore.first}-${bestScore.second}",
+            predictedScore = "$predictedHomeGoals-$predictedAwayGoals",
             homeExpectedGoals = homeXg,
             awayExpectedGoals = awayXg,
-            scoreProbability = bestScore.third * 100.0
+            scoreProbability = selectedScore.third * 100.0
         )
     }
 }
