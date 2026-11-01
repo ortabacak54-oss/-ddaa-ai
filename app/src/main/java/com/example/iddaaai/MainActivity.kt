@@ -102,20 +102,28 @@ private fun IddaaApp(context: Context) {
     var apiError by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        try {
-            liveMatches = withContext(Dispatchers.IO) { LiveApi.getMatches() }
-            val updatedTracked = gradeTracked(tracked, liveMatches)
-            if (updatedTracked != tracked) {
-                tracked = updatedTracked
-                saveTracked(prefs, tracked)
+        while (true) {
+            try {
+                val freshMatches = withContext(Dispatchers.IO) {
+                    LiveApi.getMatches()
+                }
+                liveMatches = freshMatches
+                apiError = ""
+
+                val updatedTracked = gradeTracked(tracked, freshMatches)
+                if (updatedTracked != tracked) {
+                    tracked = updatedTracked
+                    saveTracked(prefs, tracked)
+                }
+            } catch (e: Exception) {
+                apiError = e.message ?: "Bağlantı hatası"
+            } finally {
+                loading = false
             }
-        } catch (e: Exception) {
-            apiError = e.message ?: "Bağlantı hatası"
-        } finally {
-            loading = false
+
+            kotlinx.coroutines.delay(60_000)
         }
     }
-
 
     MaterialTheme(colorScheme = darkColorScheme(
         primary = Gold, onPrimary = Black, background = Black, surface = SurfaceDark,
@@ -313,8 +321,25 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
             }
 
             Spacer(Modifier.height(9.dp))
-            Text("Maç durumu: ${m.status}",
-                color = TextMuted, fontSize = 10.sp)
+            val matchStatus = m.status.uppercase()
+            val statusLabel = when (matchStatus) {
+                "1H", "2H", "ET", "LIVE" -> "CANLI"
+                "HT" -> "DEVRE ARASI"
+                "FT", "AET", "PEN" -> "MAÇ BİTTİ"
+                "NS" -> "BAŞLAMADI"
+                else -> m.status
+            }
+            val statusColor = when (matchStatus) {
+                "1H", "2H", "ET", "LIVE" -> Color(0xFF2ECC71)
+                "FT", "AET", "PEN" -> Color(0xFFDA3633)
+                else -> TextMuted
+            }
+            Text(
+                "● $statusLabel",
+                color = statusColor,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
 
             Spacer(Modifier.height(12.dp))
 
@@ -701,7 +726,7 @@ private fun TrackScreen(records: List<Tracked>, onStatus: (Int, String) -> Unit,
             Text("TAHMİN TAKİBİ", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TextButton(onClick = onClear, enabled = records.isNotEmpty()) { Text("Temizle", color = Red) }
         }
-        Text("Sonuçları elle işaretleyerek performansını izle", color = TextMuted, fontSize = 11.sp)
+        Text("Maç sonuçları otomatik takip edilir.", color = TextMuted, fontSize = 11.sp)
         Spacer(Modifier.height(12.dp))
         if (records.isEmpty()) EmptyPanel("Henüz takip edilen seçim yok", "Kuponundaki seçimleri takibe alarak burada sonuçlandırabilirsin.")
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -711,19 +736,16 @@ private fun TrackScreen(records: List<Tracked>, onStatus: (Int, String) -> Unit,
                     Text(item.fixture, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Text(item.selection, color = Gold, fontSize = 11.sp)
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        listOf("Bekliyor", "Kazandı", "Kaybetti", "İptal").forEach { s ->
-                            val color = when (s) {
-                                "Kazandı" -> Color(0xFF238636)
-                                "Kaybetti" -> Color(0xFFDA3633)
-                                "Bekliyor" -> Surface2
-                                else -> Gold
-                            }
-                            Text(s, color = if (item.status == s) Black else TextMuted, fontSize = 9.sp,
-                                modifier = Modifier.background(color, RoundedCornerShape(8.dp)).clickable { onStatus(i, s) }
-                                    .padding(horizontal = 9.dp, vertical = 8.dp))
-                        }
-                    }
+                    Text(
+                    item.status,
+                    color = when (item.status) {
+                        "Kazandı" -> Color(0xFF238636)
+                        "Kaybetti" -> Color(0xFFDA3633)
+                        else -> GoldLight
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
                 }
             }
         }
