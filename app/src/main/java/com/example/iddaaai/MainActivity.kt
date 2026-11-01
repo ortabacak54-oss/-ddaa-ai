@@ -51,7 +51,7 @@ data class Forecast(val home: Int, val draw: Int, val away: Int, val over25: Int
 }
 
 data class Pick(val matchId: String, val fixture: String, val market: String, val odds: Double)
-data class Tracked(val fixture: String, val selection: String, val status: String)
+data class Tracked(val matchId: String, val fixture: String, val selection: String, val status: String)
 
 private val sampleMatches = listOf(
     Match("m1", "Galatasaray", "Trabzonspor", "SÜPER LİG", "20:00", .82, .58, 2.1, 1.4),
@@ -90,6 +90,7 @@ private fun IddaaApp(context: Context) {
     val prefs = remember { context.getSharedPreferences("iddaa_ai", Context.MODE_PRIVATE) }
     var tab by remember { mutableStateOf("Maçlar") }
     var filter by remember { mutableStateOf("Tümü") }
+    var showFinished by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var stakeText by remember { mutableStateOf("100") }
     var picks by remember { mutableStateOf(loadPicks(prefs)) }
@@ -103,6 +104,11 @@ private fun IddaaApp(context: Context) {
     LaunchedEffect(Unit) {
         try {
             liveMatches = withContext(Dispatchers.IO) { LiveApi.getMatches() }
+            val updatedTracked = gradeTracked(tracked, liveMatches)
+            if (updatedTracked != tracked) {
+                tracked = updatedTracked
+                saveTracked(prefs, tracked)
+            }
         } catch (e: Exception) {
             apiError = e.message ?: "Bağlantı hatası"
         } finally {
@@ -166,7 +172,22 @@ private fun IddaaApp(context: Context) {
                         }
                     }
 
-                    OutlinedTextField(
+                    Row(
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = showFinished,
+                        onClick = { showFinished = !showFinished },
+                        label = { Text(if (showFinished) "Bitmiş maçlar gösteriliyor" else "Bitmiş maçları göster", fontSize = 11.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Gold,
+                            selectedLabelColor = Black
+                        )
+                    )
+                }
+
+                OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     modifier = Modifier
@@ -194,7 +215,8 @@ private fun IddaaApp(context: Context) {
                         match.away.contains(searchQuery.trim(), true) ||
                         match.league.contains(searchQuery.trim(), true)
 
-                    leagueMatch && queryMatch
+                    val finished = match.status.uppercase() in listOf("FT", "AET", "PEN")
+                    leagueMatch && queryMatch && (showFinished || !finished)
                 }
 
                     LazyColumn(
@@ -214,7 +236,16 @@ private fun IddaaApp(context: Context) {
                             }
                         } else {
                             items(shown, key = { it.id }) { m ->
-                                LiveMatchCard(m)
+                                LiveMatchCard(m) { market, odd ->
+                            val pick = Pick(m.id, "${m.home} - ${m.away}", market, odd)
+                            if (picks.none { it.matchId == pick.matchId && it.market == pick.market }) {
+                                picks = picks + pick
+                                savePicks(prefs, picks)
+                                notice = "$market kupona eklendi."
+                            } else {
+                                notice = "Bu seçim zaten kuponda."
+                            }
+                        }
                             }
                         }
                         item { Disclaimer() }
@@ -223,7 +254,7 @@ private fun IddaaApp(context: Context) {
                 "Kupon" -> CouponScreen(picks, stakeText, { stakeText = it }, { p ->
                     picks = picks.filterNot { it == p }; savePicks(prefs, picks)
                 }, { p ->
-                    tracked = tracked + Tracked(p.fixture, p.market, "Bekliyor")
+                    tracked = tracked + Tracked(p.matchId, p.fixture, p.market, "Bekliyor")
                     saveTracked(prefs, tracked)
                     picks = emptyList(); savePicks(prefs, picks)
                     notice = "Kupon seçimleri takip listesine eklendi."
@@ -240,7 +271,7 @@ private fun IddaaApp(context: Context) {
 
 
 @Composable
-private fun LiveMatchCard(m: LiveMatch) {
+private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
     var odds: MatchOdds? by remember(m.id) { mutableStateOf<MatchOdds?>(null) }
     var oddsLoading: Boolean by remember(m.id) { mutableStateOf(false) }
     var oddsError: String by remember(m.id) { mutableStateOf("") }
@@ -389,6 +420,34 @@ private fun LiveMatchCard(m: LiveMatch) {
                 OddsRow("KG Var", o.bttsYes, "KG Yok", o.bttsNo)
 
                 val prediction = PredictionEngine.calculate(o, homeForm, awayForm)
+
+                    Spacer(Modifier.height(12.dp))
+                    Text("KUPONA SEÇİM EKLE", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    @Composable
+                    fun addMarket(label: String, rawOdds: String, modifier: Modifier) {
+                        val odd = rawOdds.replace(",", ".").toDoubleOrNull()
+                        if (odd != null && odd > 1.0) {
+                            MarketButton(label, 0, odd, modifier, onAdd)
+                        } else {
+                            Text("$label: Oran yok", color = TextMuted, fontSize = 10.sp, modifier = modifier)
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        addMarket("MS 1", o.home, Modifier.weight(1f))
+                        addMarket("MS X", o.draw, Modifier.weight(1f))
+                        addMarket("MS 2", o.away, Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(7.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        addMarket("2.5 ALT", o.under25, Modifier.weight(1f))
+                        addMarket("2.5 ÜST", o.over25, Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(7.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        addMarket("KG VAR", o.bttsYes, Modifier.weight(1f))
+                        addMarket("KG YOK", o.bttsNo, Modifier.weight(1f))
+                    }
+
 
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider(color = Surface2)
@@ -654,7 +713,12 @@ private fun TrackScreen(records: List<Tracked>, onStatus: (Int, String) -> Unit,
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         listOf("Bekliyor", "Kazandı", "Kaybetti", "İptal").forEach { s ->
-                            val color = if (item.status == s) Gold else Surface2
+                            val color = when (s) {
+                                "Kazandı" -> Color(0xFF238636)
+                                "Kaybetti" -> Color(0xFFDA3633)
+                                "Bekliyor" -> Surface2
+                                else -> Gold
+                            }
                             Text(s, color = if (item.status == s) Black else TextMuted, fontSize = 9.sp,
                                 modifier = Modifier.background(color, RoundedCornerShape(8.dp)).clickable { onStatus(i, s) }
                                     .padding(horizontal = 9.dp, vertical = 8.dp))
@@ -721,12 +785,48 @@ private fun loadPicks(prefs: android.content.SharedPreferences): List<Pick> = tr
     (0 until arr.length()).map { i -> arr.getJSONObject(i).let { Pick(it.getString("id"), it.getString("fixture"), it.getString("market"), it.getDouble("odds")) } }
 } catch (_: Exception) { emptyList() }
 
+private fun gradeTracked(records: List<Tracked>, matches: List<LiveMatch>): List<Tracked> {
+    return records.map { record ->
+        if (record.status != "Bekliyor" || record.matchId.isBlank()) {
+            record
+        } else {
+            val match = matches.firstOrNull { it.id == record.matchId }
+            if (match == null || match.status.uppercase() !in listOf("FT", "AET", "PEN")) {
+                record
+            } else {
+                val goals = Regex("\\d+").findAll(match.score).mapNotNull { it.value.toIntOrNull() }.toList()
+                if (goals.size < 2) record
+                else {
+                    val home = goals[0]
+                    val away = goals[1]
+                    val total = home + away
+                    val won = when (record.selection.uppercase().replace("İ", "I")) {
+                        "MS 1" -> home > away
+                        "MS X", "BERABERLIK" -> home == away
+                        "MS 2" -> away > home
+                        "2.5 ÜST", "2.5 UST" -> total >= 3
+                        "2.5 ALT" -> total <= 2
+                        "KG VAR" -> home > 0 && away > 0
+                        "KG YOK" -> home == 0 || away == 0
+                        else -> null
+                    }
+                    when (won) {
+                        true -> record.copy(status = "Kazandı")
+                        false -> record.copy(status = "Kaybetti")
+                        null -> record
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun saveTracked(prefs: android.content.SharedPreferences, items: List<Tracked>) {
     val arr = JSONArray()
-    items.forEach { t -> arr.put(JSONObject().put("fixture", t.fixture).put("selection", t.selection).put("status", t.status)) }
+    items.forEach { t -> arr.put(JSONObject().put("id", t.matchId).put("fixture", t.fixture).put("selection", t.selection).put("status", t.status)) }
     prefs.edit().putString("tracked", arr.toString()).apply()
 }
 private fun loadTracked(prefs: android.content.SharedPreferences): List<Tracked> = try {
     val arr = JSONArray(prefs.getString("tracked", "[]"))
-    (0 until arr.length()).map { i -> arr.getJSONObject(i).let { Tracked(it.getString("fixture"), it.getString("selection"), it.getString("status")) } }
+    (0 until arr.length()).map { i -> arr.getJSONObject(i).let { Tracked(it.optString("id", ""), it.getString("fixture"), it.getString("selection"), it.getString("status")) } }
 } catch (_: Exception) { emptyList() }
