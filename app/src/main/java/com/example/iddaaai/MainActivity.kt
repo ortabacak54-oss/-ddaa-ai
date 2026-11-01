@@ -13,6 +13,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -92,6 +94,21 @@ private fun IddaaApp(context: Context) {
     var tracked by remember { mutableStateOf(loadTracked(prefs)) }
     var notice by remember { mutableStateOf("") }
 
+    var liveMatches by remember { mutableStateOf<List<LiveMatch>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var apiError by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        try {
+            liveMatches = withContext(Dispatchers.IO) { LiveApi.getMatches() }
+        } catch (e: Exception) {
+            apiError = e.message ?: "Bağlantı hatası"
+        } finally {
+            loading = false
+        }
+    }
+
+
     MaterialTheme(colorScheme = darkColorScheme(
         primary = Gold, onPrimary = Black, background = Black, surface = SurfaceDark,
         onBackground = TextMain, onSurface = TextMain, secondary = GoldLight
@@ -124,31 +141,54 @@ private fun IddaaApp(context: Context) {
             when (tab) {
                 "Maçlar" -> {
                     Column(Modifier.padding(horizontal = 18.dp)) {
-                        Text("ÖNE ÇIKAN KARŞILAŞMALAR", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text("Örnek fikstür • Canlı veri bağlantısı yok", color = TextMuted, fontSize = 11.sp)
+                        Text("GERÇEK MAÇ FİKSTÜRÜ", color = TextMain,
+                            fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            if (loading) "Fikstür yükleniyor..."
+                            else "${liveMatches.size} maç bulundu • API-Football",
+                            color = TextMuted, fontSize = 11.sp
+                        )
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf("Tümü", "Süper Lig", "Avrupa").forEach { f ->
-                                FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f, fontSize = 11.sp) },
-                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Gold, selectedLabelColor = Black))
+                                FilterChip(
+                                    selected = filter == f,
+                                    onClick = { filter = f },
+                                    label = { Text(f, fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Gold,
+                                        selectedLabelColor = Black
+                                    )
+                                )
                             }
                         }
                     }
-                    val shown = sampleMatches.filter {
-                        filter == "Tümü" || (filter == "Süper Lig" && it.league == "SÜPER LİG") ||
-                            (filter == "Avrupa" && it.league != "SÜPER LİG")
+
+                    val shown = liveMatches.filter {
+                        filter == "Tümü" ||
+                        (filter == "Süper Lig" && it.league.contains("Süper Lig", true)) ||
+                        (filter == "Avrupa" && !it.league.contains("Süper Lig", true))
                     }
-                    LazyColumn(contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 18.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(shown, key = { it.id }) { m ->
-                            MatchCard(m, picks.any { it.matchId == m.id }, onAdd = { market, odds ->
-                                if (picks.any { it.matchId == m.id && it.market == market }) {
-                                    notice = "Bu seçim kuponunda zaten var."
-                                } else {
-                                    picks = picks + Pick(m.id, "${m.home} - ${m.away}", market, odds)
-                                    savePicks(prefs, picks); notice = "$market kupona eklendi."
-                                }
-                            })
+
+                    LazyColumn(
+                        contentPadding = PaddingValues(
+                            start = 18.dp, end = 18.dp, top = 8.dp, bottom = 18.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (loading) {
+                            item { Text("Fikstür alınıyor...", color = GoldLight) }
+                        } else if (apiError.isNotBlank()) {
+                            item { EmptyPanel("Veri alınamadı", apiError) }
+                        } else if (shown.isEmpty()) {
+                            item {
+                                EmptyPanel("Maç bulunamadı",
+                                    "Seçilen filtrede şu anda fikstür bulunmuyor.")
+                            }
+                        } else {
+                            items(shown, key = { it.id }) { m ->
+                                LiveMatchCard(m)
+                            }
                         }
                         item { Disclaimer() }
                     }
@@ -167,6 +207,43 @@ private fun IddaaApp(context: Context) {
                 }, { tracked = emptyList(); saveTracked(prefs, tracked) })
                 else -> StatsScreen(tracked)
             }
+        }
+    }
+}
+
+@Composable
+private fun LiveMatchCard(m: LiveMatch) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(15.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(m.league, color = Gold, fontSize = 10.sp,
+                    fontWeight = FontWeight.ExtraBold)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (m.minute.isNotBlank() && m.minute != "null")
+                        "${m.minute}'"
+                    else m.kickoff.take(16).replace("T", " "),
+                    color = TextMuted, fontSize = 10.sp
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(m.home, color = TextMain, fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text(m.score, color = GoldLight, fontWeight = FontWeight.ExtraBold,
+                    fontSize = 17.sp)
+                Text(m.away, color = TextMain, fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp, textAlign = TextAlign.End,
+                    modifier = Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(9.dp))
+            Text("Maç durumu: ${m.status}", color = TextMuted, fontSize = 10.sp)
+            Text("Tahmin ve oran verisi henüz bağlanmadı.",
+                color = Gold, fontSize = 10.sp,
+                modifier = Modifier.padding(top = 7.dp))
         }
     }
 }
