@@ -84,7 +84,10 @@ object LiveApi {
                 score = if (
                     homeScore == null || homeScore == "null" ||
                     awayScore == null || awayScore == "null"
-                ) "- : -" else "$homeScore : $awayScore"
+                ) "- : -" else "$homeScore : $awayScore",
+                    
+                homeId = item.optString("evId"),
+                awayId = item.optString("deplasmanId")
             )
         }
     }
