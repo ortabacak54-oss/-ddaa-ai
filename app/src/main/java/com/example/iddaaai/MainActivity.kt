@@ -586,6 +586,30 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                     fontWeight = FontWeight.ExtraBold
                 )
 
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "İSTATİSTİKSEL SKOR TAHMİNİ",
+                    color = Gold,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    prediction.predictedScore,
+                    color = GoldLight,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    "Beklenen gol: %.2f - %.2f • Skor olasılığı: %.1f%%".format(
+                        java.util.Locale.US,
+                        prediction.homeExpectedGoals,
+                        prediction.awayExpectedGoals,
+                        prediction.scoreProbability
+                    ),
+                    color = TextMuted,
+                    fontSize = 11.sp
+                )
+
                 Text(
                     "Bu yüzdeler bahis oranlarından hesaplanan marjı düzeltilmiş piyasa olasılıklarıdır; garanti veya bağımsız AI tahmini değildir.",
                     color = TextMuted,
