@@ -495,7 +495,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                     }
                 }
 
-                val prediction = PredictionEngine.calculate(o, homeForm, awayForm)
+                val prediction = PredictionEngine.calculate(o, homeForm, awayForm, m.home, m.away)
 
                     Spacer(Modifier.height(12.dp))
                     Text("KUPONA SEÇİM EKLE", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)

@@ -2,6 +2,7 @@ package com.example.iddaaai
 
 import kotlin.math.exp
 import kotlin.math.pow
+import kotlin.math.roundToInt
 
 data class MarketPrediction(
     val home: Double?,
@@ -56,7 +57,9 @@ object PredictionEngine {
     fun calculate(
         odds: MatchOdds,
         homeForm: List<TeamFormMatch> = emptyList(),
-        awayForm: List<TeamFormMatch> = emptyList()
+        awayForm: List<TeamFormMatch> = emptyList(),
+    homeName: String = "",
+    awayName: String = ""
     ): MarketPrediction {
 
         val homeRecent = homeForm.take(10)
@@ -87,10 +90,31 @@ object PredictionEngine {
             else -> 4
         }
 
-        val predictedHomeGoals = goalsFromExpected(homeXg)
-        val predictedAwayGoals = goalsFromExpected(awayXg)
+        val formHomeGoals = goalsFromExpected(homeXg)
+        val formAwayGoals = goalsFromExpected(awayXg)
+
+        val h2hScores = (homeForm
+            .filter { it.opponent.trim().equals(awayName.trim(), true) }
+            .map { Triple(it.date, it.goalsFor, it.goalsAgainst) } +
+            awayForm
+            .filter { it.opponent.trim().equals(homeName.trim(), true) }
+            .map { Triple(it.date, it.goalsAgainst, it.goalsFor) })
+            .distinct()
+
+        val commonH2H = h2hScores.groupingBy { it.second to it.third }
+            .eachCount().maxByOrNull { it.value }
+
+        val weight = (h2hScores.size / 10.0).coerceIn(0.0, 0.30)
+        val predictedHomeGoals = if (commonH2H != null)
+            (formHomeGoals * (1-weight) + commonH2H.key.first * weight).roundToInt()
+        else formHomeGoals
+        val predictedAwayGoals = if (commonH2H != null)
+            (formAwayGoals * (1-weight) + commonH2H.key.second * weight).roundToInt()
+        else formAwayGoals
+
         val selectedScore = scoreMatrix.first {
-            it.first == predictedHomeGoals && it.second == predictedAwayGoals
+            it.first == predictedHomeGoals.coerceIn(0,6) &&
+            it.second == predictedAwayGoals.coerceIn(0,6)
         }
         val totalScoreProbability = scoreMatrix.sumOf { it.third }.coerceAtLeast(0.000001)
 
