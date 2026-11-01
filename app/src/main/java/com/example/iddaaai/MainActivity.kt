@@ -454,6 +454,47 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                     fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 OddsRow("KG Var", o.bttsYes, "KG Yok", o.bttsNo)
 
+                if (o.markets.isNotEmpty()) {
+                    Spacer(Modifier.height(14.dp))
+                    Text("TÜM BAHİS PAZARLARI (${o.markets.size})",
+                        color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    o.markets.forEach { market ->
+                        var expanded by remember(m.id, market.name) {
+                            mutableStateOf(false)
+                        }
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .background(Surface2, RoundedCornerShape(10.dp))
+                                .clickable { expanded = !expanded }
+                                .padding(11.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(market.name, color = Color.White,
+                                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Text(if (expanded) "−" else "+",
+                                    color = Gold, fontSize = 16.sp)
+                            }
+                            if (expanded) {
+                                Spacer(Modifier.height(8.dp))
+                                market.options.forEach { option ->
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(option.selection, color = TextMuted, fontSize = 12.sp)
+                                        Text(option.odd, color = Gold, fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+                }
+
                 val prediction = PredictionEngine.calculate(o, homeForm, awayForm)
 
                     Spacer(Modifier.height(12.dp))

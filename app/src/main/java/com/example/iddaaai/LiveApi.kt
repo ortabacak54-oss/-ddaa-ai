@@ -35,7 +35,18 @@ data class MatchOdds(
     val over25: String = "-",
     val under25: String = "-",
     val bttsYes: String = "-",
-    val bttsNo: String = "-"
+    val bttsNo: String = "-",
+    val markets: List<OddsMarket> = emptyList()
+)
+
+data class OddsMarket(
+    val name: String,
+    val options: List<OddsOption>
+)
+
+data class OddsOption(
+    val selection: String,
+    val odd: String
 )
 
 object LiveApi {
@@ -130,56 +141,50 @@ object LiveApi {
             throw Exception(json.optString("mesaj", "Oran verisi alınamadı"))
         }
 
-        val data = json.optJSONArray("veriler")
-            ?: return MatchOdds()
-
-        if (data.length() == 0) return MatchOdds()
-
-        val bookmakers = data.getJSONObject(0)
-            .optJSONArray("bookmakers") ?: return MatchOdds()
-
+        val marketsJson = json.optJSONArray("pazarlar")
+        val markets = mutableListOf<OddsMarket>()
         val result = mutableMapOf<String, String>()
 
-        for (b in 0 until bookmakers.length()) {
-            val bets = bookmakers.getJSONObject(b)
-                .optJSONArray("bets") ?: continue
+        if (marketsJson != null) {
+            for (i in 0 until marketsJson.length()) {
+                val market = marketsJson.getJSONObject(i)
+                val name = market.optString("pazar")
+                val optionsJson = market.optJSONArray("secenekler")
+                val options = mutableListOf<OddsOption>()
 
-            for (j in 0 until bets.length()) {
-                val bet = bets.getJSONObject(j)
-                val name = bet.optString("name")
-                val values = bet.optJSONArray("values") ?: continue
+                if (optionsJson != null) {
+                    for (j in 0 until optionsJson.length()) {
+                        val option = optionsJson.getJSONObject(j)
+                        val selection = option.optString("secim")
+                        val odd = option.optString("oran")
+                        options.add(OddsOption(selection, odd))
 
-                for (k in 0 until values.length()) {
-                    val value = values.getJSONObject(k)
-                    val selection = value.optString("value")
-                    val odd = value.optString("odd")
-
-                    when {
-                        name == "Match Winner" && selection == "Home" ->
-                            result.putIfAbsent("home", odd)
-                        name == "Match Winner" && selection == "Draw" ->
-                            result.putIfAbsent("draw", odd)
-                        name == "Match Winner" && selection == "Away" ->
-                            result.putIfAbsent("away", odd)
-                        name.contains("Goals Over/Under", true) &&
-                            !name.contains("First Half", true) &&
-                            !name.contains("Second Half", true) &&
-                            selection == "Over 2.5" ->
-                            result.putIfAbsent("over25", odd)
-                        name.contains("Goals Over/Under", true) &&
-                            !name.contains("First Half", true) &&
-                            !name.contains("Second Half", true) &&
-                            selection == "Under 2.5" ->
-                            result.putIfAbsent("under25", odd)
-                        name == "Both Teams Score" && selection == "Yes" ->
-                            result.putIfAbsent("bttsYes", odd)
-                        name == "Both Teams Score" && selection == "No" ->
-                            result.putIfAbsent("bttsNo", odd)
+                        if (name == "Maç Sonucu") {
+                            when (selection) {
+                                "1" -> result.putIfAbsent("home", odd)
+                                "X" -> result.putIfAbsent("draw", odd)
+                                "2" -> result.putIfAbsent("away", odd)
+                            }
+                        }
+                        if (name.contains("2,5 Alt/Üst", true) ||
+                            name.contains("2.5 Alt/Üst", true)) {
+                            when (selection) {
+                                "Alt" -> result.putIfAbsent("under25", odd)
+                                "Üst" -> result.putIfAbsent("over25", odd)
+                            }
+                        }
+                        if (name.contains("Karşılıklı Gol", true)) {
+                            when (selection) {
+                                "Var" -> result.putIfAbsent("bttsYes", odd)
+                                "Yok" -> result.putIfAbsent("bttsNo", odd)
+                            }
+                        }
                     }
                 }
+                if (options.isNotEmpty()) {
+                    markets.add(OddsMarket(name, options))
+                }
             }
-
-            if (result.size == 7) break
         }
 
         return MatchOdds(
@@ -189,7 +194,8 @@ object LiveApi {
             over25 = result["over25"] ?: "-",
             under25 = result["under25"] ?: "-",
             bttsYes = result["bttsYes"] ?: "-",
-            bttsNo = result["bttsNo"] ?: "-"
+            bttsNo = result["bttsNo"] ?: "-",
+            markets = markets
         )
     }
 }
