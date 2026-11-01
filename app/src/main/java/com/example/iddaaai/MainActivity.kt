@@ -306,6 +306,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
     var statsLoading by remember(m.id) { mutableStateOf(false) }
     var statsError by remember(m.id) { mutableStateOf("") }
     var formLoaded by remember(m.id) { mutableStateOf(false) }
+      var analysisDone by remember(m.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Card(
@@ -428,7 +429,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                             }
                         }
                     },
-                    enabled = !statsLoading,
+                    enabled = formLoaded && !formLoading && !statsLoading && homeForm.isNotEmpty() && awayForm.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Surface2,
@@ -465,200 +466,64 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 AverageSection(m.away, awayStatsAverage)
                 Spacer(Modifier.height(12.dp))
-                val prediction = PredictionEngine.calculate(
-                    odds ?: MatchOdds(), homeForm, awayForm, m.home, m.away,
-                    homeStatsAverage, awayStatsAverage
-                )
-                odds?.let { o ->
-                Column(
-                    Modifier.fillMaxWidth()
-                        .background(Surface2, RoundedCornerShape(10.dp))
-                        .clickable { oddsExpanded = !oddsExpanded }
-                        .padding(12.dp)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("MAÇ ORANLARI (${o.markets.size + 3} başlık)",
-                            color = Gold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        Text(if (oddsExpanded) "−" else "+",
-                            color = Gold, fontSize = 18.sp)
-                    }
-                    if (oddsExpanded) {
-                        Spacer(Modifier.height(12.dp))
-                        Text("MAÇ SONUCU (1X2)", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        OddsRow("MS 1", o.home, "X", o.draw, "MS 2", o.away)
-                        Spacer(Modifier.height(10.dp))
-                        Text("2.5 GOL ALT / ÜST", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        OddsRow("Alt 2.5", o.under25, "Üst 2.5", o.over25)
-                        Spacer(Modifier.height(10.dp))
-                        Text("KARŞILIKLI GOL", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        OddsRow("KG Var", o.bttsYes, "KG Yok", o.bttsNo)
-                        if (o.markets.isNotEmpty()) {
-                            Spacer(Modifier.height(12.dp))
-                            Text("TÜM BAHİS PAZARLARI (${o.markets.size})",
-                                color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            o.markets.forEach { market ->
-                                Spacer(Modifier.height(7.dp))
-                                Text(market.name, color = Color.White,
-                                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                market.options.forEach { option ->
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(option.selection, color = TextMuted, fontSize = 12.sp)
-                                        Text(option.odd, color = Gold, fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+              Spacer(Modifier.height(12.dp))
+              Button(
+                  onClick = { analysisDone = true },
+                  enabled = formLoaded && !statsLoading &&
+                      homeStatsAverage?.stats?.isNotEmpty() == true &&
+                      awayStatsAverage?.stats?.isNotEmpty() == true,
+                  modifier = Modifier.fillMaxWidth(),
+                  colors = ButtonDefaults.buttonColors(
+                      containerColor = Gold,
+                      contentColor = Color.Black
+                  )
+              ) {
+                  Text("ANALİZ ET", fontWeight = FontWeight.Bold)
+              }
 
-
-                    Spacer(Modifier.height(12.dp))
-                    Text("KUPONA SEÇİM EKLE", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    @Composable
-                    fun addMarket(label: String, rawOdds: String, modifier: Modifier) {
-                        val odd = rawOdds.replace(",", ".").toDoubleOrNull()
-                        if (odd != null && odd > 1.0) {
-                            MarketButton(label, 0, odd, modifier, onAdd)
-                        } else {
-                            Text("$label: Oran yok", color = TextMuted, fontSize = 10.sp, modifier = modifier)
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        addMarket("MS 1", o.home, Modifier.weight(1f))
-                        addMarket("MS X", o.draw, Modifier.weight(1f))
-                        addMarket("MS 2", o.away, Modifier.weight(1f))
-                    }
-                    Spacer(Modifier.height(7.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        addMarket("2.5 ALT", o.under25, Modifier.weight(1f))
-                        addMarket("2.5 ÜST", o.over25, Modifier.weight(1f))
-                    }
-                    Spacer(Modifier.height(7.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        addMarket("KG VAR", o.bttsYes, Modifier.weight(1f))
-                        addMarket("KG YOK", o.bttsNo, Modifier.weight(1f))
-                    }
-
-
-                                }
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider(color = Surface2)
-
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "IDDAA AI ANALİZİ",
-                    color = GoldLight,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-
-                Spacer(Modifier.height(10.dp))
-                Text("TAHMİN OLASILIKLARI",
-                    color = TextMuted, fontSize = 10.sp)
-
-                @Composable
-                fun showProbability(label: String, value: Double?) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(label, color = TextMain,
-                            fontSize = 12.sp,
-                            modifier = Modifier.weight(1f))
-                        Text(
-                            value?.let { "%.1f%%".format(java.util.Locale.US, it) }
-                                ?: "Veri yok",
-                            color = GoldLight,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                showProbability("MS 1", prediction.home)
-                showProbability("Beraberlik", prediction.draw)
-                showProbability("MS 2", prediction.away)
-                showProbability("2.5 Alt", prediction.under25)
-                showProbability("2.5 Üst", prediction.over25)
-                showProbability("KG Var", prediction.bttsYes)
-                showProbability("KG Yok", prediction.bttsNo)
-
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "ORANLARA GÖRE EN YÜKSEK OLASILIK",
-                    color = Gold,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    prediction.bestPick +
-                        (prediction.confidence?.let {
-                            " • %.1f%%".format(java.util.Locale.US, it)
-                        } ?: ""),
-                    color = GoldLight,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "İSTATİSTİKSEL SKOR TAHMİNİ",
-                    color = Gold,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    prediction.predictedScore,
-                    color = GoldLight,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "TAKIMLARIN KARŞILIKLI MAÇLARI",
-                    color = Gold,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "En sık skor: ${prediction.mostCommonH2HScore} (${prediction.mostCommonH2HCount} kez)",
-                    color = GoldLight,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (prediction.h2hScores.isEmpty()) "Son form verilerinde karşılıklı maç bulunamadı"
-                    else prediction.h2hScores.joinToString("  • "),
-                    color = TextMuted,
-                    fontSize = 11.sp
-                )
-
-                Text(
-                    "Beklenen gol: %.2f - %.2f • Skor olasılığı: %.1f%%".format(
-                        java.util.Locale.US,
-                        prediction.homeExpectedGoals,
-                        prediction.awayExpectedGoals,
-                        prediction.scoreProbability
-                    ),
-                    color = TextMuted,
-                    fontSize = 11.sp
-                )
-
-                Text(
-                    "Bu yüzdeler bahis oranlarından hesaplanan marjı düzeltilmiş piyasa olasılıklarıdır; garanti veya bağımsız AI tahmini değildir.",
-                    color = TextMuted,
-                    fontSize = 10.sp,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+              if (analysisDone &&
+                  homeStatsAverage?.stats?.isNotEmpty() == true &&
+                  awayStatsAverage?.stats?.isNotEmpty() == true
+              ) {
+                  val prediction = PredictionEngine.calculate(
+                      MatchOdds(), homeForm, awayForm, m.home, m.away,
+                      homeStatsAverage, awayStatsAverage
+                  )
+                  Spacer(Modifier.height(14.dp))
+                  Text("MAÇ TAHMİNİ", color = GoldLight,
+                      fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                  Text("Tahmini skor: ${prediction.predictedScore}",
+                      color = GoldLight, fontSize = 27.sp,
+                      fontWeight = FontWeight.ExtraBold)
+                  Text("Beklenen gol: %.2f - %.2f".format(
+                      java.util.Locale.US,
+                      prediction.homeExpectedGoals,
+                      prediction.awayExpectedGoals
+                  ), color = TextMuted, fontSize = 12.sp)
+                  Spacer(Modifier.height(8.dp))
+                  Text("Maç sonucu olasılıkları", color = Gold,
+                      fontWeight = FontWeight.Bold)
+                  Text("MS 1: %.1f%%   X: %.1f%%   MS 2: %.1f%%".format(
+                      java.util.Locale.US,
+                      prediction.home ?: 0.0,
+                      prediction.draw ?: 0.0,
+                      prediction.away ?: 0.0
+                  ), color = TextMain, fontSize = 12.sp)
+                  Text("2.5 Alt: %.1f%%   2.5 Üst: %.1f%%".format(
+                      java.util.Locale.US,
+                      prediction.under25 ?: 0.0,
+                      prediction.over25 ?: 0.0
+                  ), color = TextMain, fontSize = 12.sp)
+                  Text("KG Var: %.1f%%   KG Yok: %.1f%%".format(
+                      java.util.Locale.US,
+                      prediction.bttsYes ?: 0.0,
+                      prediction.bttsNo ?: 0.0
+                  ), color = TextMain, fontSize = 12.sp)
+                  Text("En yüksek model olasılığı: ${prediction.bestPick}",
+                      color = GoldLight, fontWeight = FontWeight.Bold)
+                  Text("Tahmin yalnızca takım formu ve son maç istatistiklerinden hesaplanır; kesin sonuç garantisi değildir.",
+                      color = TextMuted, fontSize = 10.sp)
+              }
             }
         }
     }
