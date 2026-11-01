@@ -406,7 +406,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                 TeamFormSection(m.away, awayForm)
             }
 
-            
+
 
                 Button(
                     onClick = {
@@ -465,6 +465,10 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 AverageSection(m.away, awayStatsAverage)
                 Spacer(Modifier.height(12.dp))
+                val prediction = PredictionEngine.calculate(
+                    odds ?: MatchOdds(), homeForm, awayForm, m.home, m.away,
+                    homeStatsAverage, awayStatsAverage
+                )
                 odds?.let { o ->
                 Column(
                     Modifier.fillMaxWidth()
@@ -513,7 +517,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                         }
                     }
                 }
-                val prediction = PredictionEngine.calculate(o, homeForm, awayForm, m.home, m.away, homeStatsAverage, awayStatsAverage)
+
 
                     Spacer(Modifier.height(12.dp))
                     Text("KUPONA SEÇİM EKLE", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -543,6 +547,7 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                     }
 
 
+                                }
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider(color = Surface2)
 
@@ -654,7 +659,6 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                     fontSize = 10.sp,
                     modifier = Modifier.padding(top = 8.dp)
                 )
-                }
             }
         }
     }
