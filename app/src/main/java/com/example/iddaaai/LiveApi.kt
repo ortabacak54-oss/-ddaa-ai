@@ -134,6 +134,28 @@ object LiveApi {
         }
     }
 
+
+    fun getStats(fixtureId: String, date: String = ""): MatchStats {
+        val dateParam = if (date.isBlank()) "" else "&date=$date"
+        val json = request("$API_URL?action=stats&fixture=$fixtureId$dateParam")
+        if (json.optString("durum") != "aktif") {
+            throw Exception(json.optString("mesaj", "İstatistik alınamadı"))
+        }
+        val array = json.optJSONArray("istatistikler")
+        val stats = mutableListOf<MatchStat>()
+        if (array != null) {
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                stats.add(MatchStat(
+                    item.optString("istatistik"),
+                    item.optString("ev"),
+                    item.optString("deplasman")
+                ))
+            }
+        }
+        return MatchStats(fixtureId, stats)
+    }
+
     fun getOdds(fixtureId: String): MatchOdds {
         val json = request("$API_URL?action=odds&fixture=$fixtureId")
 
@@ -199,3 +221,15 @@ object LiveApi {
         )
     }
 }
+
+
+data class MatchStat(
+    val name: String,
+    val home: String,
+    val away: String
+)
+
+data class MatchStats(
+    val fixture: String,
+    val stats: List<MatchStat>
+)

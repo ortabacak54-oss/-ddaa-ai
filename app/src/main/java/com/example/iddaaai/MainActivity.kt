@@ -300,6 +300,9 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
     var awayForm by remember(m.id) { mutableStateOf<List<TeamFormMatch>>(emptyList()) }
     var formLoading by remember(m.id) { mutableStateOf(false) }
     var formError by remember(m.id) { mutableStateOf("") }
+    var matchStats by remember(m.id) { mutableStateOf<MatchStats?>(null) }
+    var statsLoading by remember(m.id) { mutableStateOf(false) }
+    var statsError by remember(m.id) { mutableStateOf("") }
     var formLoaded by remember(m.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -401,7 +404,49 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                 TeamFormSection(m.away, awayForm)
             }
 
-            Spacer(Modifier.height(12.dp))
+            
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            statsLoading = true
+                            statsError = ""
+                            try {
+                                matchStats = withContext(Dispatchers.IO) {
+                                    LiveApi.getStats(m.id)
+                                }
+                            } catch (e: Exception) {
+                                statsError = e.message ?: "İstatistik alınamadı"
+                            } finally {
+                                statsLoading = false
+                            }
+                        }
+                    },
+                    enabled = !statsLoading,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Surface2,
+                        contentColor = GoldLight
+                    )
+                ) {
+                    Text(if (statsLoading) "İSTATİSTİKLER YÜKLENİYOR..." else "İSTATİSTİKLERİ GETİR")
+                }
+                if (statsError.isNotBlank()) {
+                    Text(statsError, color = Red, fontSize = 11.sp)
+                }
+                matchStats?.let { result ->
+                    result.stats.forEach { stat ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(stat.home, color = TextMain, fontSize = 12.sp)
+                            Text(stat.name, color = Gold, fontSize = 11.sp)
+                            Text(stat.away, color = TextMain, fontSize = 12.sp)
+                        }
+                    }
+                }
+Spacer(Modifier.height(12.dp))
 
             Button(
                 onClick = {
