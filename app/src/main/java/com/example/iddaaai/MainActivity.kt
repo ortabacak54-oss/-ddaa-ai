@@ -439,46 +439,41 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
             }
 
             odds?.let { o ->
+                var oddsExpanded by remember(m.id) { mutableStateOf(false) }
                 Spacer(Modifier.height(12.dp))
-                Text("MAÇ SONUCU (1X2)", color = Gold,
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                OddsRow("MS 1", o.home, "X", o.draw, "MS 2", o.away)
-
-                Spacer(Modifier.height(10.dp))
-                Text("2.5 GOL ALT / ÜST", color = Gold,
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                OddsRow("Alt 2.5", o.under25, "Üst 2.5", o.over25)
-
-                Spacer(Modifier.height(10.dp))
-                Text("KARŞILIKLI GOL", color = Gold,
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                OddsRow("KG Var", o.bttsYes, "KG Yok", o.bttsNo)
-
-                if (o.markets.isNotEmpty()) {
-                    Spacer(Modifier.height(14.dp))
-                    Text("TÜM BAHİS PAZARLARI (${o.markets.size})",
-                        color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    o.markets.forEach { market ->
-                        var expanded by remember(m.id, market.name) {
-                            mutableStateOf(false)
-                        }
-                        Column(
-                            Modifier.fillMaxWidth()
-                                .background(Surface2, RoundedCornerShape(10.dp))
-                                .clickable { expanded = !expanded }
-                                .padding(11.dp)
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .background(Surface2, RoundedCornerShape(10.dp))
+                        .clickable { oddsExpanded = !oddsExpanded }
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("MAÇ ORANLARI (${o.markets.size + 3} başlık)",
+                            color = Gold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text(if (oddsExpanded) "−" else "+",
+                            color = Gold, fontSize = 18.sp)
+                    }
+                    if (oddsExpanded) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("MAÇ SONUCU (1X2)", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        OddsRow("MS 1", o.home, "X", o.draw, "MS 2", o.away)
+                        Spacer(Modifier.height(10.dp))
+                        Text("2.5 GOL ALT / ÜST", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        OddsRow("Alt 2.5", o.under25, "Üst 2.5", o.over25)
+                        Spacer(Modifier.height(10.dp))
+                        Text("KARŞILIKLI GOL", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        OddsRow("KG Var", o.bttsYes, "KG Yok", o.bttsNo)
+                        if (o.markets.isNotEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            Text("TÜM BAHİS PAZARLARI (${o.markets.size})",
+                                color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            o.markets.forEach { market ->
+                                Spacer(Modifier.height(7.dp))
                                 Text(market.name, color = Color.White,
                                     fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                Text(if (expanded) "−" else "+",
-                                    color = Gold, fontSize = 16.sp)
-                            }
-                            if (expanded) {
-                                Spacer(Modifier.height(8.dp))
                                 market.options.forEach { option ->
                                     Row(
                                         Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -491,10 +486,8 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                                 }
                             }
                         }
-                        Spacer(Modifier.height(6.dp))
                     }
                 }
-
                 val prediction = PredictionEngine.calculate(o, homeForm, awayForm, m.home, m.away)
 
                     Spacer(Modifier.height(12.dp))

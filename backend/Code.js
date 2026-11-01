@@ -186,7 +186,7 @@ function doGet(e) {
       }
 
       matchRows.sort(function(a,b) { return b.tarih.localeCompare(a.tarih); });
-      return json({durum:"aktif", takimId:teamId, toplam:matchRows.length, maclar:matchRows.slice(0,20)});
+      return json({durum:"aktif", takimId:teamId, toplam:matchRows.length, maclar:matchRows});
     } catch (err) {
       return json({durum:"hata", mesaj:String(err)});
     }
