@@ -1,0 +1,376 @@
+package com.example.iddaaai
+
+import android.content.Context
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import org.json.JSONArray
+import org.json.JSONObject
+import kotlin.math.roundToInt
+
+private val Black = Color(0xFF0B0B0D)
+private val SurfaceDark = Color(0xFF171719)
+private val Surface2 = Color(0xFF222225)
+private val Gold = Color(0xFFD6AE55)
+private val GoldLight = Color(0xFFF0D58A)
+private val TextMain = Color(0xFFF5F2EA)
+private val TextMuted = Color(0xFFA5A19A)
+private val Green = Color(0xFF65C99A)
+private val Red = Color(0xFFE17C78)
+
+data class Match(
+    val id: String, val home: String, val away: String, val league: String,
+    val kickoff: String, val homeForm: Double, val awayForm: Double,
+    val homeGoals: Double, val awayGoals: Double, val isDemo: Boolean = true
+)
+
+data class Forecast(val home: Int, val draw: Int, val away: Int, val over25: Int, val btts: Int) {
+    val pick: String get() = when (maxOf(home, draw, away)) {
+        home -> "MS 1"; draw -> "MS X"; else -> "MS 2"
+    }
+    val confidence: Int get() = maxOf(home, draw, away)
+}
+
+data class Pick(val matchId: String, val fixture: String, val market: String, val odds: Double)
+data class Tracked(val fixture: String, val selection: String, val status: String)
+
+private val sampleMatches = listOf(
+    Match("m1", "Galatasaray", "Trabzonspor", "SÜPER LİG", "20:00", .82, .58, 2.1, 1.4),
+    Match("m2", "Fenerbahçe", "Beşiktaş", "SÜPER LİG", "20:30", .76, .70, 1.9, 1.7),
+    Match("m3", "Arsenal", "Chelsea", "PREMIER LEAGUE", "21:00", .78, .62, 2.0, 1.5),
+    Match("m4", "Real Madrid", "Sevilla", "LA LIGA", "22:00", .85, .49, 2.3, 1.1),
+    Match("m5", "Inter", "Roma", "SERIE A", "22:45", .79, .61, 2.0, 1.3)
+)
+
+private fun forecast(m: Match): Forecast {
+    // Demo-only heuristic. Replace with a validated model and real match data before production.
+    val h = m.homeForm * .55 + m.homeGoals * .45 + .12
+    val a = m.awayForm * .55 + m.awayGoals * .45
+    val gap = h - a
+    var p1 = (42 + gap * 15).roundToInt().coerceIn(15, 75)
+    var p2 = (30 - gap * 15).roundToInt().coerceIn(10, 70)
+    var px = (100 - p1 - p2).coerceIn(8, 40)
+    val sum = p1 + px + p2
+    p1 = (p1 * 100.0 / sum).roundToInt()
+    px = (px * 100.0 / sum).roundToInt()
+    p2 = 100 - p1 - px
+    val goals = m.homeGoals + m.awayGoals
+    return Forecast(p1, px, p2, (48 + (goals - 2.5) * 13).roundToInt().coerceIn(18, 82),
+        (45 + (goals - 2.0) * 12).roundToInt().coerceIn(20, 80))
+}
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { IddaaApp(this) }
+    }
+}
+
+@Composable
+private fun IddaaApp(context: Context) {
+    val prefs = remember { context.getSharedPreferences("iddaa_ai", Context.MODE_PRIVATE) }
+    var tab by remember { mutableStateOf("Maçlar") }
+    var filter by remember { mutableStateOf("Tümü") }
+    var stakeText by remember { mutableStateOf("100") }
+    var picks by remember { mutableStateOf(loadPicks(prefs)) }
+    var tracked by remember { mutableStateOf(loadTracked(prefs)) }
+    var notice by remember { mutableStateOf("") }
+
+    MaterialTheme(colorScheme = darkColorScheme(
+        primary = Gold, onPrimary = Black, background = Black, surface = SurfaceDark,
+        onBackground = TextMain, onSurface = TextMain, secondary = GoldLight
+    )) {
+        Column(Modifier.fillMaxSize().background(Black)) {
+            Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("İDDAA  /  AI", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
+                        Text("Maç analiz merkezi", color = TextMain, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Text("BETA", color = Black, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.background(Gold, CircleShape).padding(horizontal = 12.dp, vertical = 7.dp))
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(14.dp)).padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    listOf("Maçlar", "Kupon", "Takip", "İstatistik").forEach { name ->
+                        val active = tab == name
+                        Box(Modifier.weight(1f).background(if (active) Gold else Color.Transparent, RoundedCornerShape(10.dp))
+                            .clickable { tab = name }.padding(vertical = 11.dp), contentAlignment = Alignment.Center) {
+                            Text(name, color = if (active) Black else TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+            if (notice.isNotBlank()) {
+                Text(notice, color = GoldLight, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
+            }
+            when (tab) {
+                "Maçlar" -> {
+                    Column(Modifier.padding(horizontal = 18.dp)) {
+                        Text("ÖNE ÇIKAN KARŞILAŞMALAR", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("Örnek fikstür • Canlı veri bağlantısı yok", color = TextMuted, fontSize = 11.sp)
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Tümü", "Süper Lig", "Avrupa").forEach { f ->
+                                FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f, fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Gold, selectedLabelColor = Black))
+                            }
+                        }
+                    }
+                    val shown = sampleMatches.filter {
+                        filter == "Tümü" || (filter == "Süper Lig" && it.league == "SÜPER LİG") ||
+                            (filter == "Avrupa" && it.league != "SÜPER LİG")
+                    }
+                    LazyColumn(contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(shown, key = { it.id }) { m ->
+                            MatchCard(m, picks.any { it.matchId == m.id }, onAdd = { market, odds ->
+                                if (picks.any { it.matchId == m.id && it.market == market }) {
+                                    notice = "Bu seçim kuponunda zaten var."
+                                } else {
+                                    picks = picks + Pick(m.id, "${m.home} - ${m.away}", market, odds)
+                                    savePicks(prefs, picks); notice = "$market kupona eklendi."
+                                }
+                            })
+                        }
+                        item { Disclaimer() }
+                    }
+                }
+                "Kupon" -> CouponScreen(picks, stakeText, { stakeText = it }, { p ->
+                    picks = picks.filterNot { it == p }; savePicks(prefs, picks)
+                }, { p ->
+                    tracked = tracked + Tracked(p.fixture, p.market, "Bekliyor")
+                    saveTracked(prefs, tracked)
+                    picks = emptyList(); savePicks(prefs, picks)
+                    notice = "Kupon seçimleri takip listesine eklendi."
+                })
+                "Takip" -> TrackScreen(tracked, { index, status ->
+                    tracked = tracked.mapIndexed { i, t -> if (i == index) t.copy(status = status) else t }
+                    saveTracked(prefs, tracked)
+                }, { tracked = emptyList(); saveTracked(prefs, tracked) })
+                else -> StatsScreen(tracked)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MatchCard(m: Match, added: Boolean, onAdd: (String, Double) -> Unit) {
+    val f = remember(m) { forecast(m) }
+    Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark), shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(15.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(m.league, color = Gold, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+                Spacer(Modifier.weight(1f))
+                Text(m.kickoff, color = TextMuted, fontSize = 11.sp)
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(m.home, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Text("VS", color = Gold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(m.away, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                    textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(15.dp))
+            Text("1X2 TAHMİN OLASILIĞI", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(7.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Probability("1", f.home, Modifier.weight(1f))
+                Probability("X", f.draw, Modifier.weight(1f))
+                Probability("2", f.away, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Öne çıkan sonuç", color = TextMuted, fontSize = 10.sp)
+                    Text(f.pick, color = GoldLight, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+                }
+                Text("Model puanı %${f.confidence}", color = TextMuted, fontSize = 10.sp)
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("DİĞER PAZARLAR", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(7.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                MarketButton("2.5 ÜST", f.over25, 1.85, Modifier.weight(1f), onAdd)
+                MarketButton("KG VAR", f.btts, 1.72, Modifier.weight(1f), onAdd)
+                MarketButton("MS 1", f.home, 2.05, Modifier.weight(1f), onAdd)
+            }
+            Text(if (added) "✓ Kuponunda seçim var" else "Seçime dokunarak kupona ekle",
+                color = if (added) Green else TextMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun Probability(label: String, value: Int, modifier: Modifier) {
+    Column(modifier.background(Surface2, RoundedCornerShape(10.dp)).padding(vertical = 9.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = TextMuted, fontSize = 10.sp)
+        Text("%$value", color = GoldLight, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+    }
+}
+
+@Composable
+private fun MarketButton(label: String, chance: Int, odds: Double, modifier: Modifier, onAdd: (String, Double) -> Unit) {
+    Column(modifier.background(Surface2, RoundedCornerShape(10.dp)).clickable { onAdd(label, odds) }.padding(vertical = 9.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = TextMain, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text("${odds}x", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("%$chance", color = TextMuted, fontSize = 9.sp)
+    }
+}
+
+@Composable
+private fun CouponScreen(picks: List<Pick>, stakeText: String, onStake: (String) -> Unit,
+                         onRemove: (Pick) -> Unit, onSave: (Pick) -> Unit) {
+    val totalOdds = picks.fold(1.0) { acc, p -> acc * p.odds }
+    val stake = stakeText.toDoubleOrNull() ?: 0.0
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+        Text("KUPON OLUŞTURUCU", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        Text("Seçimlerini yönet ve olası getiriyi hesapla", color = TextMuted, fontSize = 11.sp)
+        Spacer(Modifier.height(14.dp))
+        if (picks.isEmpty()) {
+            EmptyPanel("Kuponun henüz boş", "Maçlar sekmesinden bir market seçerek kuponuna ekleyebilirsin.")
+        } else {
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                items(picks) { p ->
+                    Row(Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(12.dp)).padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(p.fixture, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("${p.market}  •  ${p.odds} oran", color = Gold, fontSize = 11.sp)
+                        }
+                        TextButton(onClick = { onRemove(p) }) { Text("Sil", color = Red) }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Kupon oranı", color = TextMuted, fontSize = 11.sp)
+        Text(if (picks.isEmpty()) "—" else String.format("%.2f", totalOdds), color = GoldLight, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+        OutlinedTextField(value = stakeText, onValueChange = onStake, label = { Text("Misli / tutar (₺)") },
+            singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Gold, focusedLabelColor = Gold, cursorColor = Gold))
+        Text("Olası brüt ödeme: ${if (stake > 0 && picks.isNotEmpty()) String.format("%.2f", stake * totalOdds) else "—"} ₺",
+            color = TextMain, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp))
+        Button(onClick = { picks.forEach(onSave) }, enabled = picks.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Black)) {
+            Text("Seçimleri takibe al", fontWeight = FontWeight.Bold)
+        }
+        Disclaimer()
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun TrackScreen(records: List<Tracked>, onStatus: (Int, String) -> Unit, onClear: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("TAHMİN TAKİBİ", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClick = onClear, enabled = records.isNotEmpty()) { Text("Temizle", color = Red) }
+        }
+        Text("Sonuçları elle işaretleyerek performansını izle", color = TextMuted, fontSize = 11.sp)
+        Spacer(Modifier.height(12.dp))
+        if (records.isEmpty()) EmptyPanel("Henüz takip edilen seçim yok", "Kuponundaki seçimleri takibe alarak burada sonuçlandırabilirsin.")
+        else LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            items(records.size) { i ->
+                val item = records[i]
+                Column(Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(13.dp)).padding(13.dp)) {
+                    Text(item.fixture, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(item.selection, color = Gold, fontSize = 11.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        listOf("Bekliyor", "Kazandı", "Kaybetti", "İptal").forEach { s ->
+                            val color = if (item.status == s) Gold else Surface2
+                            Text(s, color = if (item.status == s) Black else TextMuted, fontSize = 9.sp,
+                                modifier = Modifier.background(color, RoundedCornerShape(8.dp)).clickable { onStatus(i, s) }
+                                    .padding(horizontal = 9.dp, vertical = 8.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatsScreen(items: List<Tracked>) {
+    val settled = items.filter { it.status == "Kazandı" || it.status == "Kaybetti" }
+    val wins = settled.count { it.status == "Kazandı" }
+    val rate = if (settled.isEmpty()) 0 else (wins * 100.0 / settled.size).roundToInt()
+    Column(Modifier.fillMaxSize().padding(18.dp)) {
+        Text("PERFORMANS ÖZETİ", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        Text("Yalnızca elle sonuçlandırılmış takip kayıtları", color = TextMuted, fontSize = 11.sp)
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            StatCard("TAKİP", "${items.size}", Modifier.weight(1f))
+            StatCard("SONUÇLANAN", "${settled.size}", Modifier.weight(1f))
+            StatCard("BAŞARI", "%$rate", Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(15.dp))
+        Text("Kazandı: $wins   •   Kaybetti: ${settled.size - wins}   •   Bekliyor: ${items.count { it.status == "Bekliyor" }}",
+            color = TextMuted, fontSize = 12.sp)
+        Spacer(Modifier.height(18.dp))
+        EmptyPanel("Veri dürüstlüğü", "Örnek fikstür ve sezgisel olasılıklar gerçek model performansı değildir. Başarı oranı, yalnızca senin sonuçlandırdığın kayıtlarla hesaplanır.")
+    }
+}
+
+@Composable
+private fun StatCard(title: String, value: String, modifier: Modifier) {
+    Column(modifier.background(SurfaceDark, RoundedCornerShape(13.dp)).padding(12.dp)) {
+        Text(title, color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text(value, color = GoldLight, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+    }
+}
+
+@Composable
+private fun EmptyPanel(title: String, body: String) {
+    Column(Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(16.dp)).padding(18.dp)) {
+        Text(title, color = GoldLight, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        Text(body, color = TextMuted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun Disclaimer() {
+    Text("Bilgilendirme: Bu sürüm demo veriler ve eğitilmemiş örnek bir sezgisel kullanır. Gerçek maç tahmini, canlı oran veya kazanç garantisi sunmaz. Bahis kayıp riski taşır.",
+        color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(top = 12.dp, bottom = 8.dp))
+}
+
+private fun savePicks(prefs: android.content.SharedPreferences, picks: List<Pick>) {
+    val arr = JSONArray()
+    picks.forEach { p -> arr.put(JSONObject().put("id", p.matchId).put("fixture", p.fixture).put("market", p.market).put("odds", p.odds)) }
+    prefs.edit().putString("picks", arr.toString()).apply()
+}
+private fun loadPicks(prefs: android.content.SharedPreferences): List<Pick> = try {
+    val arr = JSONArray(prefs.getString("picks", "[]"))
+    (0 until arr.length()).map { i -> arr.getJSONObject(i).let { Pick(it.getString("id"), it.getString("fixture"), it.getString("market"), it.getDouble("odds")) } }
+} catch (_: Exception) { emptyList() }
+
+private fun saveTracked(prefs: android.content.SharedPreferences, items: List<Tracked>) {
+    val arr = JSONArray()
+    items.forEach { t -> arr.put(JSONObject().put("fixture", t.fixture).put("selection", t.selection).put("status", t.status)) }
+    prefs.edit().putString("tracked", arr.toString()).apply()
+}
+private fun loadTracked(prefs: android.content.SharedPreferences): List<Tracked> = try {
+    val arr = JSONArray(prefs.getString("tracked", "[]"))
+    (0 until arr.length()).map { i -> arr.getJSONObject(i).let { Tracked(it.getString("fixture"), it.getString("selection"), it.getString("status")) } }
+} catch (_: Exception) { emptyList() }

@@ -1,0 +1,107 @@
+function json(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet(e) {
+  var p = PropertiesService.getScriptProperties();
+  var key = p.getProperty("APIFOOTBALL_KEY");
+
+  if (!key) return json({durum:"hata", mesaj:"API anahtarı bulunamadı"});
+
+  var action = (e.parameter.action || "fixtures").toLowerCase();
+  var date = e.parameter.date ||
+    Utilities.formatDate(new Date(), "Europe/Istanbul", "yyyy-MM-dd");
+
+  var endpoint = "/fixtures";
+  var params = "";
+
+  if (action === "fixtures") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return json({durum:"hata", mesaj:"Tarih YYYY-MM-DD olmalı"});
+    }
+    params = "?date=" + date + "&timezone=Europe%2FIstanbul";
+  } else if (action === "live") {
+    params = "?live=all";
+  } else if (action === "odds") {
+    var fixture = e.parameter.fixture || "";
+    if (!/^\d+$/.test(fixture)) {
+      return json({durum:"hata", mesaj:"Geçerli fixture numarası gerekli"});
+    }
+    endpoint = "/odds";
+    params = "?fixture=" + fixture;
+  } else {
+    return json({durum:"hata", mesaj:"Bilinmeyen işlem"});
+  }
+
+  var cache = CacheService.getScriptCache();
+  var cacheKey = "football_" + action + "_" + (action === "fixtures" ? date : (e.parameter.fixture || "all"));
+  var cached = cache.get(cacheKey);
+  if (cached) return ContentService.createTextOutput(cached)
+    .setMimeType(ContentService.MimeType.JSON);
+
+  try {
+    var response = UrlFetchApp.fetch(
+      "https://v3.football.api-sports.io" + endpoint + params,
+      {
+        method: "get",
+        headers: {"x-apisports-key": key},
+        muteHttpExceptions: true
+      }
+    );
+
+    var status = response.getResponseCode();
+    var data = JSON.parse(response.getContentText());
+
+    if (status !== 200 || (data.errors && Object.keys(data.errors).length)) {
+      return json({
+        durum:"api_hatasi",
+        http:status,
+        hatalar:data.errors || data.message || "API isteği başarısız"
+      });
+    }
+
+    var result;
+
+    if (action === "odds") {
+      result = {
+        durum:"aktif",
+        islem:"odds",
+        toplam:(data.response || []).length,
+        veriler:data.response || []
+      };
+    } else {
+      var matches = (data.response || []).map(function(x) {
+        return {
+          id:x.fixture.id,
+          tarih:x.fixture.date,
+          durum:x.fixture.status.short,
+          dakika:x.fixture.status.elapsed,
+          lig:x.league.name,
+          ulke:x.league.country,
+          ev:x.teams.home.name,
+          deplasman:x.teams.away.name,
+          evGol:x.goals.home,
+          deplasmanGol:x.goals.away
+        };
+      });
+
+      result = {
+        durum:"aktif",
+        islem:action,
+        tarih:date,
+        toplam:matches.length,
+        maclar:matches
+      };
+    }
+
+    var output = JSON.stringify(result);
+    cache.put(cacheKey, output, 60);
+    return ContentService.createTextOutput(output)
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch(err) {
+    return json({durum:"hata", mesaj:String(err)});
+  }
+}
