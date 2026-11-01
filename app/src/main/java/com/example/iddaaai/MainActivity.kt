@@ -241,9 +241,9 @@ private fun IddaaApp(context: Context) {
 
 @Composable
 private fun LiveMatchCard(m: LiveMatch) {
-    var odds by remember(m.id) { mutableStateOf<MatchOdds?>(null) }
-    var oddsLoading by remember(m.id) { mutableStateOf(false) }
-    var oddsError by remember(m.id) { mutableStateOf("") }
+    var odds: MatchOdds? by remember(m.id) { mutableStateOf<MatchOdds?>(null) }
+    var oddsLoading: Boolean by remember(m.id) { mutableStateOf(false) }
+    var oddsError: String by remember(m.id) { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     Card(
