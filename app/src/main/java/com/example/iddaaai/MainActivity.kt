@@ -658,7 +658,6 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
             }
         }
     }
-}
 
 @Composable
 private fun TeamFormSection(teamName: String, matches: List<TeamFormMatch>) {
