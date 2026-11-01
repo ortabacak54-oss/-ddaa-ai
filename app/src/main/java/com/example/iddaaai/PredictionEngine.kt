@@ -33,13 +33,13 @@ object PredictionEngine {
 
         if (recent.isEmpty()) return null
 
-        val points = recent.sumOf {
-            when (it.result) {
-                "G" -> 3
-                "B" -> 1
-                else -> 0
+        val points = recent.fold(0.0) { total, match ->
+            total + when (match.result) {
+                "G" -> 3.0
+                "B" -> 1.0
+                else -> 0.0
             }
-        }.toDouble()
+        }
 
         val pointsRate = points / (recent.size * 3.0)
         val goalDifference = recent.sumOf {
