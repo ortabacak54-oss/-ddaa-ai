@@ -82,11 +82,25 @@ object PredictionEngine {
         
         fun statFactor(data: TeamStatsAverage?): Double {
             if (data == null) return 1.0
-            val shots = data.stats.firstOrNull { it.name.contains("İsabetli Şut", true) }?.average
-            val total = data.stats.firstOrNull { it.name.contains("Toplam Şut", true) }?.average
-            val onTargetFactor = shots?.let { 1.0 + (it - 4.0) * 0.035 } ?: 1.0
-            val totalFactor = total?.let { 1.0 + (it - 12.0) * 0.008 } ?: 1.0
-            return (onTargetFactor * totalFactor).coerceIn(0.85, 1.15)
+
+            fun stat(vararg names: String): Double? {
+                return data.stats.firstOrNull { item ->
+                    names.any { name -> item.name.contains(name, ignoreCase = true) }
+                }?.average
+            }
+
+            val xg = stat("Gol Beklentisi", "xG")
+            val shotsOnTarget = stat("İsabetli Şut")
+            val totalShots = stat("Toplam Şut")
+            val corners = stat("Korner")
+
+            val xgFactor = xg?.let { 1.0 + (it - 1.2) * 0.12 } ?: 1.0
+            val targetFactor = shotsOnTarget?.let { 1.0 + (it - 4.5) * 0.025 } ?: 1.0
+            val shotFactor = totalShots?.let { 1.0 + (it - 13.0) * 0.008 } ?: 1.0
+            val cornerFactor = corners?.let { 1.0 + (it - 5.0) * 0.012 } ?: 1.0
+
+            return (xgFactor * targetFactor * shotFactor * cornerFactor)
+                .coerceIn(0.88, 1.12)
         }
 
         val homeXg = ((homeAttack + awayDefence) / 2.0 * statFactor(homeStats)).coerceIn(0.20, 4.0)
