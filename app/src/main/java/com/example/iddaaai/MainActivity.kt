@@ -91,6 +91,7 @@ private fun IddaaApp(context: Context) {
     var tab by remember { mutableStateOf("Maçlar") }
     var filter by remember { mutableStateOf("Tümü") }
     var showFinished by remember { mutableStateOf(false) }
+    var showLiveOnly by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var stakeText by remember { mutableStateOf("100") }
     var picks by remember { mutableStateOf(loadPicks(prefs)) }
@@ -193,7 +194,17 @@ private fun IddaaApp(context: Context) {
                             selectedLabelColor = Black
                         )
                     )
-                }
+
+                FilterChip(
+                    selected = showLiveOnly,
+                    onClick = { showLiveOnly = !showLiveOnly },
+                    label = { Text("Canlı Maçları Gör", fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFF238636),
+                        selectedLabelColor = Color.White
+                    )
+                )
+            }
 
                 OutlinedTextField(
                     value = searchQuery,
@@ -224,7 +235,8 @@ private fun IddaaApp(context: Context) {
                         match.league.contains(searchQuery.trim(), true)
 
                     val finished = match.status.uppercase() in listOf("FT", "AET", "PEN")
-                    leagueMatch && queryMatch && (showFinished || !finished)
+                    val live = match.status.uppercase() in listOf("1H", "2H", "HT", "ET", "BT", "P", "LIVE")
+                    leagueMatch && queryMatch && (showFinished || !finished) && (!showLiveOnly || live)
                 }
 
                     LazyColumn(

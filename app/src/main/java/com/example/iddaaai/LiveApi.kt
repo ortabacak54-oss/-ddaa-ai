@@ -43,11 +43,16 @@ object LiveApi {
         "https://script.google.com/macros/s/AKfycbzDzTZeS67QAxqd5jkDohrsmfvWjLJWoT3z5KtXjyPU2RXznvw5eYy7Tts41_X2Rxd2/exec"
 
     private fun request(url: String): JSONObject {
-        val connection = URL(url).openConnection() as HttpURLConnection
+        val separator = if (url.contains("?")) "&" else "?"
+        val freshUrl = "$url${separator}_ts=${System.currentTimeMillis()}"
+        val connection = URL(freshUrl).openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
         connection.connectTimeout = 15000
         connection.readTimeout = 20000
         connection.instanceFollowRedirects = true
+        connection.useCaches = false
+        connection.setRequestProperty("Cache-Control", "no-cache, no-store")
+        connection.setRequestProperty("Pragma", "no-cache")
 
         try {
             val response = connection.inputStream.bufferedReader().use {
