@@ -36,6 +36,17 @@ object PredictionEngine {
     private fun average(values: List<Int>, fallback: Double): Double =
         if (values.isEmpty()) fallback else values.average()
 
+    private fun blendedAverage(
+        venueValues: List<Int>,
+        allValues: List<Int>,
+        fallback: Double
+    ): Double {
+        val general = average(allValues, fallback)
+        val venue = average(venueValues, general)
+        val venueWeight = (venueValues.size / 10.0).coerceIn(0.0, 0.65)
+        return general * (1.0 - venueWeight) + venue * venueWeight
+    }
+
     private fun poisson(lambda: Double, goals: Int): Double {
         var factorial = 1.0
         for (i in 1..goals) factorial *= i
@@ -51,13 +62,13 @@ object PredictionEngine {
         val homeRecent = homeForm.take(10)
         val awayRecent = awayForm.take(10)
 
-        val homeVenue = homeRecent.filter { it.venue.contains("İç saha", true) }
-        val awayVenue = awayRecent.filter { it.venue.contains("Deplasman", true) }
+        val homeVenue = homeForm.filter { it.venue.contains("İç saha", true) }.take(10)
+        val awayVenue = awayForm.filter { it.venue.contains("Deplasman", true) }.take(10)
 
-        val homeAttack = average(homeVenue.map { it.goalsFor }, average(homeRecent.map { it.goalsFor }, 1.35))
-        val homeDefence = average(homeVenue.map { it.goalsAgainst }, average(homeRecent.map { it.goalsAgainst }, 1.35))
-        val awayAttack = average(awayVenue.map { it.goalsFor }, average(awayRecent.map { it.goalsFor }, 1.15))
-        val awayDefence = average(awayVenue.map { it.goalsAgainst }, average(awayRecent.map { it.goalsAgainst }, 1.35))
+        val homeAttack = blendedAverage(homeVenue.map { it.goalsFor }, homeRecent.map { it.goalsFor }, 1.35)
+        val homeDefence = blendedAverage(homeVenue.map { it.goalsAgainst }, homeRecent.map { it.goalsAgainst }, 1.35)
+        val awayAttack = blendedAverage(awayVenue.map { it.goalsFor }, awayRecent.map { it.goalsFor }, 1.15)
+        val awayDefence = blendedAverage(awayVenue.map { it.goalsAgainst }, awayRecent.map { it.goalsAgainst }, 1.35)
 
         val homeXg = ((homeAttack + awayDefence) / 2.0).coerceIn(0.20, 4.0)
         val awayXg = ((awayAttack + homeDefence) / 2.0).coerceIn(0.20, 4.0)
