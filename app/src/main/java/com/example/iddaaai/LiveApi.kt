@@ -19,6 +19,7 @@ data class LiveMatch(
 
 data class TeamFormMatch(
     val id: String,
+    val matchSlug: String,
     val date: String,
     val league: String,
     val opponent: String,
@@ -47,6 +48,17 @@ data class OddsMarket(
 data class OddsOption(
     val selection: String,
     val odd: String
+)
+
+data class TeamStatAverage(
+    val name: String,
+    val average: Double
+)
+
+data class TeamStatsAverage(
+    val teamId: String,
+    val games: Int,
+    val stats: List<TeamStatAverage>
 )
 
 object LiveApi {
@@ -123,6 +135,7 @@ object LiveApi {
 
             TeamFormMatch(
                 id = item.optString("id"),
+                matchSlug = item.optString("matchSlug"),
                 date = item.optString("tarih"),
                 league = item.optString("lig"),
                 opponent = item.optString("rakip"),
@@ -135,9 +148,9 @@ object LiveApi {
     }
 
 
-    fun getStats(fixtureId: String, date: String = ""): MatchStats {
-        val dateParam = if (date.isBlank()) "" else "&date=$date"
-        val json = request("$API_URL?action=stats&fixture=$fixtureId$dateParam")
+    fun getStats(fixtureId: String, matchSlug: String): MatchStats {
+        val slugParam = java.net.URLEncoder.encode(matchSlug, "UTF-8")
+        val json = request("$API_URL?action=stats&fixture=$fixtureId&slug=$slugParam")
         if (json.optString("durum") != "aktif") {
             throw Exception(json.optString("mesaj", "İstatistik alınamadı"))
         }
@@ -154,6 +167,46 @@ object LiveApi {
             }
         }
         return MatchStats(fixtureId, stats)
+    }
+
+    fun getTeamStatsAverage(teamId: String, limit: Int = 5): TeamStatsAverage {
+        val history = getTeamForm(teamId)
+            .filter { it.id.isNotBlank() && it.matchSlug.isNotBlank() }
+            .take(limit)
+
+        val totals = mutableMapOf<String, Double>()
+        val counts = mutableMapOf<String, Int>()
+        var successfulGames = 0
+
+        for (game in history) {
+            try {
+                val result = getStats(game.id, game.matchSlug)
+                val teamWasHome = game.venue.equals("İç saha", ignoreCase = true)
+                var gameHadStats = false
+
+                for (stat in result.stats) {
+                    val raw = if (teamWasHome) stat.home else stat.away
+                    val value = raw.replace("%", "")
+                        .replace(",", ".")
+                        .trim()
+                        .toDoubleOrNull() ?: continue
+
+                    totals[stat.name] = (totals[stat.name] ?: 0.0) + value
+                    counts[stat.name] = (counts[stat.name] ?: 0) + 1
+                    gameHadStats = true
+                }
+
+                if (gameHadStats) successfulGames++
+            } catch (_: Exception) {
+                // İstatistiği bulunamayan maç atlanır.
+            }
+        }
+
+        val averages = totals.map { (name, total) ->
+            TeamStatAverage(name, total / (counts[name] ?: 1))
+        }.sortedBy { it.name }
+
+        return TeamStatsAverage(teamId, successfulGames, averages)
     }
 
     fun getOdds(fixtureId: String): MatchOdds {

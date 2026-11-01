@@ -63,6 +63,9 @@ object PredictionEngine {
         awayForm: List<TeamFormMatch> = emptyList(),
     homeName: String = "",
     awayName: String = ""
+    ,
+        homeStats: TeamStatsAverage? = null,
+        awayStats: TeamStatsAverage? = null
     ): MarketPrediction {
 
         val homeRecent = homeForm.take(10)
@@ -76,8 +79,19 @@ object PredictionEngine {
         val awayAttack = blendedAverage(awayVenue.map { it.goalsFor }, awayRecent.map { it.goalsFor }, 1.15)
         val awayDefence = blendedAverage(awayVenue.map { it.goalsAgainst }, awayRecent.map { it.goalsAgainst }, 1.35)
 
-        val homeXg = ((homeAttack + awayDefence) / 2.0).coerceIn(0.20, 4.0)
-        val awayXg = ((awayAttack + homeDefence) / 2.0).coerceIn(0.20, 4.0)
+        
+        fun statFactor(data: TeamStatsAverage?): Double {
+            if (data == null) return 1.0
+            val shots = data.stats.firstOrNull { it.name.contains("İsabetli Şut", true) }?.average
+            val total = data.stats.firstOrNull { it.name.contains("Toplam Şut", true) }?.average
+            val onTargetFactor = shots?.let { 1.0 + (it - 4.0) * 0.035 } ?: 1.0
+            val totalFactor = total?.let { 1.0 + (it - 12.0) * 0.008 } ?: 1.0
+            return (onTargetFactor * totalFactor).coerceIn(0.85, 1.15)
+        }
+
+        val homeXg = ((homeAttack + awayDefence) / 2.0 * statFactor(homeStats)).coerceIn(0.20, 4.0)
+        val awayXg = ((awayAttack + homeDefence) / 2.0 * statFactor(awayStats)).coerceIn(0.20, 4.0)
+
 
         val scoreMatrix = (0..6).flatMap { h ->
             (0..6).map { a ->

@@ -29,6 +29,63 @@ function doGet(e) {
     }
   }
 
+
+  if (action === "stats") {
+    try {
+      var fixtureId = e.parameter.fixture || "";
+      var matchSlug = e.parameter.slug || "";
+
+      if (!fixtureId || !matchSlug)
+        return json({durum:"hata", mesaj:"fixture veya slug parametresi eksik"});
+
+      var url = "https://www.mackolik.com/mac/" + matchSlug + "/istatistik/" + fixtureId;
+      var response = UrlFetchApp.fetch(url, {
+        headers: {"User-Agent":"Mozilla/5.0"},
+        muteHttpExceptions:true
+      });
+
+      if (response.getResponseCode() !== 200)
+        return json({durum:"hata", http:response.getResponseCode(), mesaj:"İstatistik sayfası açılamadı"});
+
+      var html = response.getContentText();
+      var rows = [];
+      var rowRegex = /<th class="Opta-Stats-Bars-Text"[^>]*>([\s\S]*?)<\/th>\s*<\/tr>\s*<tr>\s*<td class="Opta-Outer[^"]*"[^>]*>([\s\S]*?)<\/td>[\s\S]*?<td class="Opta-Outer[^"]*"[^>]*>([\s\S]*?)<\/td>\s*<\/tr>/g;
+      var match;
+
+      function clean(v) {
+        return v.replace(/<[^>]*>/g," ")
+          .replace(/&nbsp;/g," ")
+          .replace(/&amp;/g,"&")
+          .replace(/&quot;/g,'"')
+          .replace(/&#39;/g,"'")
+          .replace(/&uuml;/g,"ü")
+          .replace(/&ouml;/g,"ö")
+          .replace(/&ccedil;/g,"ç")
+          .replace(/&nbsp;/g," ")
+          .replace(/\s+/g," ").trim();
+      }
+
+      while ((match = rowRegex.exec(html)) !== null) {
+        rows.push({
+          istatistik: clean(match[1]),
+          ev: clean(match[2]),
+          deplasman: clean(match[3])
+        });
+      }
+
+      return json({
+        durum: rows.length ? "aktif" : "veri_yok",
+        islem:"stats",
+        fixture:fixtureId,
+        mac:matchSlug,
+        toplam:rows.length,
+        istatistikler:rows
+      });
+    } catch(err) {
+      return json({durum:"hata", mesaj:String(err)});
+    }
+  }
+
   if (action === "odds") {
     try {
       var fixtureId = e.parameter.fixture || "";
@@ -145,10 +202,12 @@ function doGet(e) {
       var html = teamResponse.getContentText();
       var rowRegex = /<tr class="p0c-team-matches__row" data-match-type="([^"]+)"[\s\S]*?<\/tr>/g;
       var matchRows = [];
+      var firstRowHtml = "";
       var rowMatch;
 
       while ((rowMatch = rowRegex.exec(html)) !== null) {
         var row = rowMatch[0];
+      if (!firstRowHtml) firstRowHtml = row.substring(0, 5000);
         var names = [];
         var nameRegex = /class="p0c-team-matches__team-full-name"[^>]*>([\s\S]*?)<\/[^>]+>/g;
         var nm;
@@ -164,6 +223,11 @@ function doGet(e) {
         }
 
         var dateMatch = row.match(/data-start-timestamp="(\d+)"/);
+      var matchLink = row.match(/href="https:\/\/www\.mackolik\.com\/index\.php\/mac\/([^"]+)"/);
+      var matchPath = matchLink ? matchLink[1] : "";
+      var pathParts = matchPath.split("/");
+      var matchId = pathParts.length ? pathParts[pathParts.length - 1] : "";
+      var matchSlug = pathParts.length > 1 ? pathParts.slice(0, -1).join("/") : "";
         if (names.length < 2 || scores.length < 2 || !/^\d+$/.test(scores[0]) || !/^\d+$/.test(scores[1])) continue;
 
         var homeScore = Number(scores[0]);
@@ -174,7 +238,8 @@ function doGet(e) {
         var result = teamScore > opponentScore ? "G" : teamScore < opponentScore ? "M" : "B";
 
         matchRows.push({
-          id: dateMatch ? dateMatch[1] : String(matchRows.length),
+          id: matchId,
+          matchSlug: matchSlug,
           tarih: dateMatch ? new Date(Number(dateMatch[1]) * 1000).toISOString().slice(0,10) : "",
           lig: "",
           rakip: isHome ? names[1] : names[0],
@@ -185,7 +250,8 @@ function doGet(e) {
         });
       }
 
-      matchRows.sort(function(a,b) { return b.tarih.localeCompare(a.tarih); });
+      if (e.parameter.debug === "1") return json({durum:"debug", satirSayisi:matchRows.length, ilkSatir:firstRowHtml});
+    matchRows.sort(function(a,b) { return b.tarih.localeCompare(a.tarih); });
       return json({durum:"aktif", takimId:teamId, toplam:matchRows.length, maclar:matchRows});
     } catch (err) {
       return json({durum:"hata", mesaj:String(err)});

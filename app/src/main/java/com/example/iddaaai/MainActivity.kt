@@ -300,7 +300,8 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
     var awayForm by remember(m.id) { mutableStateOf<List<TeamFormMatch>>(emptyList()) }
     var formLoading by remember(m.id) { mutableStateOf(false) }
     var formError by remember(m.id) { mutableStateOf("") }
-    var matchStats by remember(m.id) { mutableStateOf<MatchStats?>(null) }
+    var homeStatsAverage by remember(m.id) { mutableStateOf<TeamStatsAverage?>(null) }
+    var awayStatsAverage by remember(m.id) { mutableStateOf<TeamStatsAverage?>(null) }
     var statsLoading by remember(m.id) { mutableStateOf(false) }
     var statsError by remember(m.id) { mutableStateOf("") }
     var formLoaded by remember(m.id) { mutableStateOf(false) }
@@ -412,11 +413,15 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                             statsLoading = true
                             statsError = ""
                             try {
-                                matchStats = withContext(Dispatchers.IO) {
-                                    LiveApi.getStats(m.id)
+                                val averages = withContext(Dispatchers.IO) {
+                                    val home = LiveApi.getTeamStatsAverage(m.homeId, 5)
+                                    val away = LiveApi.getTeamStatsAverage(m.awayId, 5)
+                                    Pair(home, away)
                                 }
+                                homeStatsAverage = averages.first
+                                awayStatsAverage = averages.second
                             } catch (e: Exception) {
-                                statsError = e.message ?: "İstatistik alınamadı"
+                                statsError = e.message ?: "İstatistikler alınamadı"
                             } finally {
                                 statsLoading = false
                             }
@@ -429,62 +434,35 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                         contentColor = GoldLight
                     )
                 ) {
-                    Text(if (statsLoading) "İSTATİSTİKLER YÜKLENİYOR..." else "İSTATİSTİKLERİ GETİR")
+                    Text(if (statsLoading) "SON 5 MAÇ ANALİZ EDİLİYOR..." else "SON 5 MAÇ İSTATİSTİK ORTALAMALARI")
                 }
+
                 if (statsError.isNotBlank()) {
                     Text(statsError, color = Red, fontSize = 11.sp)
                 }
-                matchStats?.let { result ->
-                    result.stats.forEach { stat ->
+
+                @Composable
+                fun AverageSection(title: String, data: TeamStatsAverage?) {
+                    if (data == null) return
+                    Text("$title (${data.games} maç)", color = Gold, fontWeight = FontWeight.Bold)
+                    data.stats.forEach { stat ->
                         Row(
                             Modifier.fillMaxWidth().padding(vertical = 3.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(stat.home, color = TextMain, fontSize = 12.sp)
-                            Text(stat.name, color = Gold, fontSize = 11.sp)
-                            Text(stat.away, color = TextMain, fontSize = 12.sp)
+                            Text(stat.name, color = TextMain, fontSize = 11.sp)
+                            Text(
+                                String.format(java.util.Locale.US, "%.1f", stat.average),
+                                color = GoldLight,
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }
-Spacer(Modifier.height(12.dp))
 
-            Button(
-                onClick = {
-                    scope.launch {
-                        oddsLoading = true
-                        oddsError = ""
-                        try {
-                            odds = withContext(Dispatchers.IO) {
-                                LiveApi.getOdds(m.id)
-                            }
-                        } catch (e: Exception) {
-                            oddsError = e.message ?: "Oranlar alınamadı"
-                        } finally {
-                            oddsLoading = false
-                        }
-                    }
-                },
-                enabled = !oddsLoading,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Gold,
-                    contentColor = Black
-                )
-            ) {
-                Text(
-                    if (oddsLoading) "Oranlar yükleniyor..."
-                    else if (odds != null) "Oranları Yenile"
-                    else "Oranları Getir",
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            if (oddsError.isNotBlank()) {
-                Text(oddsError, color = Color.Red, fontSize = 11.sp)
-            }
-
-            odds?.let { o ->
-                var oddsExpanded by remember(m.id) { mutableStateOf(false) }
+                AverageSection(m.home, homeStatsAverage)
+                Spacer(Modifier.height(6.dp))
+                AverageSection(m.away, awayStatsAverage)
                 Spacer(Modifier.height(12.dp))
                 Column(
                     Modifier.fillMaxWidth()
@@ -533,7 +511,7 @@ Spacer(Modifier.height(12.dp))
                         }
                     }
                 }
-                val prediction = PredictionEngine.calculate(o, homeForm, awayForm, m.home, m.away)
+                val prediction = PredictionEngine.calculate(o, homeForm, awayForm, m.home, m.away, homeStatsAverage, awayStatsAverage)
 
                     Spacer(Modifier.height(12.dp))
                     Text("KUPONA SEÇİM EKLE", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
