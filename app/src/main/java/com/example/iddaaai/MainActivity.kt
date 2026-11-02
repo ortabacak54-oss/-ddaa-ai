@@ -297,9 +297,16 @@ private fun IddaaApp(context: Context) {
                     ) {
                         bulkErrors++
                     } else {
-                        // Bilerek MatchOdds() kullanılıyor: hiçbir oran API çağrısı yapılmıyor.
+                        val matchOdds = try {
+                            withContext(Dispatchers.IO) {
+                                LiveApi.getOdds(m.id)
+                            }
+                        } catch (_: Exception) {
+                            MatchOdds()
+                        }
+
                         val result = PredictionEngine.calculate(
-                            MatchOdds(),
+                            matchOdds,
                             forms.first,
                             forms.second,
                             m.home,
@@ -326,7 +333,11 @@ private fun IddaaApp(context: Context) {
                             homeFormSummary = bulkFormSummary(forms.first),
                             awayFormSummary = bulkFormSummary(forms.second),
                             homeStatsSummary = bulkStatsSummary(averages.first),
-                            awayStatsSummary = bulkStatsSummary(averages.second)
+                            awayStatsSummary = bulkStatsSummary(averages.second),
+                            oddsNote = if (hasUsableOdds(matchOdds))
+                                "Oran verisi analize dahil edildi."
+                            else
+                                "⚠️ Oran bulunamadı – Tahmin yalnızca istatistiksel verilerle oluşturuldu."
                         )
 
                         analysisRecords =
@@ -625,6 +636,14 @@ private fun IddaaApp(context: Context) {
 }
 
 
+
+private fun hasUsableOdds(o: MatchOdds): Boolean {
+    fun valid(v: String) = v.replace(",", ".").toDoubleOrNull()?.let { it > 1.0 } == true
+    return (valid(o.home) && valid(o.draw) && valid(o.away)) ||
+           (valid(o.over25) && valid(o.under25)) ||
+           (valid(o.bttsYes) && valid(o.bttsNo))
+}
+
 @Composable
 private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> Unit, onSaveAnalysis: (AnalysisRecord) -> Unit, onAdd: (String, Double) -> Unit) {
     var odds: MatchOdds? by remember(m.id) { mutableStateOf<MatchOdds?>(null) }
@@ -804,10 +823,21 @@ private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> U
               Spacer(Modifier.height(12.dp))
               Button(
                   onClick = {
-                      val result = PredictionEngine.calculate(
-                          MatchOdds(), homeForm, awayForm, m.home, m.away,
-                          homeStatsAverage, awayStatsAverage
-                      )
+                      scope.launch {
+                          oddsLoading = true
+                          oddsError = ""
+                          try {
+                              val matchOdds = try {
+                                  withContext(Dispatchers.IO) { LiveApi.getOdds(m.id) }
+                              } catch (e: Exception) {
+                                  oddsError = e.message ?: "Oran verisi alınamadı"
+                                  MatchOdds()
+                              }
+                              odds = matchOdds
+                              val result = PredictionEngine.calculate(
+                                  matchOdds, homeForm, awayForm, m.home, m.away,
+                                  homeStatsAverage, awayStatsAverage
+                              )
                       val markets = listOf(
                           "MS 1" to (result.home ?: 0.0),
                           "MS X" to (result.draw ?: 0.0),
@@ -831,12 +861,20 @@ private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> U
                                 over25 = result.over25 ?: 0.0,
                                 under25 = result.under25 ?: 0.0,
                                 bttsYes = result.bttsYes ?: 0.0,
-                                bttsNo = result.bttsNo ?: 0.0
+                                bttsNo = result.bttsNo ?: 0.0,
+                                oddsNote = if (hasUsableOdds(matchOdds))
+                                    "Oran verisi analize dahil edildi."
+                                else
+                                    "⚠️ Oran bulunamadı – Tahmin yalnızca istatistiksel verilerle oluşturuldu."
                             )
                         )
-                      analysisDone = true
+                              analysisDone = true
+                          } finally {
+                              oddsLoading = false
+                          }
+                      }
                   },
-                  enabled = formLoaded && !statsLoading &&
+                  enabled = formLoaded && !statsLoading && !oddsLoading &&
                       homeStatsAverage?.stats?.isNotEmpty() == true &&
                       awayStatsAverage?.stats?.isNotEmpty() == true,
                   modifier = Modifier.fillMaxWidth(),
@@ -853,7 +891,7 @@ private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> U
                   awayStatsAverage?.stats?.isNotEmpty() == true
               ) {
                   val prediction = PredictionEngine.calculate(
-                      MatchOdds(), homeForm, awayForm, m.home, m.away,
+                      odds ?: MatchOdds(), homeForm, awayForm, m.home, m.away,
                       homeStatsAverage, awayStatsAverage
                   )
                   Spacer(Modifier.height(14.dp))
@@ -1276,7 +1314,8 @@ data class AnalysisRecord(
     val homeFormSummary: String = "",
     val awayFormSummary: String = "",
     val homeStatsSummary: String = "",
-    val awayStatsSummary: String = ""
+    val awayStatsSummary: String = "",
+    val oddsNote: String = "⚠️ Oran bulunamadı – Tahmin yalnızca istatistiksel verilerle oluşturuldu."
 )
 
 private fun saveAnalysisRecords(
@@ -1302,6 +1341,7 @@ private fun saveAnalysisRecords(
             put("awayFormSummary", r.awayFormSummary)
             put("homeStatsSummary", r.homeStatsSummary)
             put("awayStatsSummary", r.awayStatsSummary)
+            put("oddsNote", r.oddsNote)
         })
     }
     prefs.edit().putString("analysis_records", array.toString()).apply()
@@ -1330,7 +1370,8 @@ private fun loadAnalysisRecords(
                 homeFormSummary = o.optString("homeFormSummary", ""),
                 awayFormSummary = o.optString("awayFormSummary", ""),
                 homeStatsSummary = o.optString("homeStatsSummary", ""),
-                awayStatsSummary = o.optString("awayStatsSummary", "")
+                awayStatsSummary = o.optString("awayStatsSummary", ""),
+                oddsNote = o.optString("oddsNote", "⚠️ Oran bulunamadı – Tahmin yalnızca istatistiksel verilerle oluşturuldu.")
             )
         }
     } catch (_: Exception) {
@@ -1473,6 +1514,14 @@ private fun AnalysisRecordsScreen(records: List<AnalysisRecord>) {
                                     Text(value.ifBlank { "—" }, color = color, fontSize = 11.sp)
                                 }
                             }
+                        }
+                        if (r.oddsNote.isNotBlank()) {
+                            Text(
+                                r.oddsNote,
+                                color = if (r.oddsNote.contains("bulunamadı", true)) Red else Green,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 6.dp)
+                            )
                         }
                     }
                 }
