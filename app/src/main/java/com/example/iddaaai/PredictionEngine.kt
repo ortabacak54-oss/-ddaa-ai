@@ -135,18 +135,6 @@ object PredictionEngine {
         val commonH2H = h2hScores.groupingBy { it.second to it.third }
             .eachCount().maxByOrNull { it.value }
 
-        val weight = (h2hScores.size / 10.0).coerceIn(0.0, 0.30)
-        val predictedHomeGoals = if (commonH2H != null)
-            (formHomeGoals * (1-weight) + commonH2H.key.first * weight).roundToInt()
-        else formHomeGoals
-        val predictedAwayGoals = if (commonH2H != null)
-            (formAwayGoals * (1-weight) + commonH2H.key.second * weight).roundToInt()
-        else formAwayGoals
-
-        val selectedScore = scoreMatrix.first {
-            it.first == predictedHomeGoals.coerceIn(0,6) &&
-            it.second == predictedAwayGoals.coerceIn(0,6)
-        }
         val totalScoreProbability = scoreMatrix.sumOf { it.third }.coerceAtLeast(0.000001)
 
         val modelHome = scoreMatrix.filter { it.first > it.second }.sumOf { it.third } / totalScoreProbability
@@ -178,6 +166,43 @@ object PredictionEngine {
 
         val finalGoals = if (goals.all { it != null }) goals else listOf(modelUnder, modelOver)
         val finalBtts = if (btts.all { it != null }) btts else listOf(modelBtts, 100.0 - modelBtts)
+
+        // Her pazarda en yüksek yüzdeye sahip seçeneği belirle.
+        val selectedResult = adjustedResult.indices.maxByOrNull { adjustedResult[it] } ?: 0
+        val selectedGoal = finalGoals.indices.maxByOrNull { finalGoals[it] } ?: 0
+        val selectedBtts = finalBtts.indices.maxByOrNull { finalBtts[it] } ?: 0
+
+        // Seçilen üç tahminle en fazla uyuşan, Poisson olasılığı en yüksek skoru bul.
+        fun scoreMatches(score: Triple<Int, Int, Double>): Int {
+            val h = score.first
+            val a = score.second
+
+            val resultMatch = when (selectedResult) {
+                0 -> h > a
+                1 -> h == a
+                else -> h < a
+            }
+
+            val goalMatch = when (selectedGoal) {
+                0 -> h + a <= 2
+                else -> h + a >= 3
+            }
+
+            val bttsMatch = when (selectedBtts) {
+                0 -> h > 0 && a > 0
+                else -> h == 0 || a == 0
+            }
+
+            return listOf(resultMatch, goalMatch, bttsMatch).count { it }
+        }
+
+        val selectedScore = scoreMatrix.maxWithOrNull(
+            compareBy<Triple<Int, Int, Double>> { scoreMatches(it) }
+                .thenBy { it.third }
+        )!!
+
+        val predictedHomeGoals = selectedScore.first
+        val predictedAwayGoals = selectedScore.second
 
         val candidates = listOf(
             "MS 1" to adjustedResult[0],
