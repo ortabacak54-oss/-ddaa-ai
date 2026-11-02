@@ -221,7 +221,14 @@ private fun IddaaApp(context: Context) {
 
 
     var liveMatches by remember { mutableStateOf<List<LiveMatch>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(false) }
+    var hasLoadedFixtures by remember { mutableStateOf(false) }
+    var selectedDate by remember {
+        mutableStateOf(
+            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                .format(java.util.Date())
+        )
+    }
 
     fun bulkFormSummary(form: List<TeamFormMatch>): String {
         val recent = form.take(5)
@@ -399,25 +406,32 @@ private fun IddaaApp(context: Context) {
 
     var apiError by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) {
-        while (true) {
+    fun loadSelectedDate() {
+        if (loading) return
+        val requestedDate = selectedDate
+        loading = true
+        apiError = ""
+        liveMatches = emptyList()
+
+        bulkScope.launch {
             try {
                 val freshMatches = withContext(Dispatchers.IO) {
-                    LiveApi.getMatches()
+                    LiveApi.getMatches(requestedDate)
                 }
                 liveMatches = freshMatches
-            val updatedRecords = updateAnalysisResults(
-                analysisRecords,
-                freshMatches,
-                { it.id },
-                { it.status },
-                { it.score }
-            )
-            if (updatedRecords != analysisRecords) {
-                analysisRecords = updatedRecords
-                saveAnalysisRecords(prefs, analysisRecords)
-            }
-                apiError = ""
+                hasLoadedFixtures = true
+
+                val updatedRecords = updateAnalysisResults(
+                    analysisRecords,
+                    freshMatches,
+                    { it.id },
+                    { it.status },
+                    { it.score }
+                )
+                if (updatedRecords != analysisRecords) {
+                    analysisRecords = updatedRecords
+                    saveAnalysisRecords(prefs, analysisRecords)
+                }
 
                 val updatedTracked = gradeTracked(tracked, freshMatches)
                 if (updatedTracked != tracked) {
@@ -426,13 +440,13 @@ private fun IddaaApp(context: Context) {
                 }
             } catch (e: Exception) {
                 apiError = e.message ?: "Bağlantı hatası"
+                hasLoadedFixtures = true
             } finally {
                 loading = false
             }
-
-            kotlinx.coroutines.delay(60_000)
         }
     }
+
 
     if (showClearRecordsDialog) {
         androidx.compose.material3.AlertDialog(
@@ -511,6 +525,57 @@ private fun IddaaApp(context: Context) {
                             fontWeight = FontWeight.Bold, fontSize = 14.sp)
 
                         Spacer(Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    val calendar = java.util.Calendar.getInstance()
+                                    try {
+                                        val parts = selectedDate.split("-")
+                                        calendar.set(
+                                            parts[0].toInt(),
+                                            parts[1].toInt() - 1,
+                                            parts[2].toInt()
+                                        )
+                                    } catch (_: Exception) {}
+
+                                    android.app.DatePickerDialog(
+                                        context,
+                                        { _, year, month, day ->
+                                            selectedDate = String.format(
+                                                java.util.Locale.US,
+                                                "%04d-%02d-%02d",
+                                                year, month + 1, day
+                                            )
+                                        },
+                                        calendar.get(java.util.Calendar.YEAR),
+                                        calendar.get(java.util.Calendar.MONTH),
+                                        calendar.get(java.util.Calendar.DAY_OF_MONTH)
+                                    ).show()
+                                },
+                                enabled = !loading,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Tarih: $selectedDate", fontSize = 12.sp)
+                            }
+
+                            Button(
+                                onClick = { loadSelectedDate() },
+                                enabled = !loading,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    if (loading) "Yükleniyor..." else "MAÇLARI GETİR",
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
                         Button(
                             onClick = { showBulkDialog = true },
                             enabled = !bulkRunning,
@@ -563,7 +628,8 @@ private fun IddaaApp(context: Context) {
                         }
                         Text(
                             if (loading) "Fikstür yükleniyor..."
-                            else "${liveMatches.size} maç bulundu • API-Football",
+                            else if (!hasLoadedFixtures) "Tarih seçip Maçları Getir butonuna bas."
+                            else "$selectedDate • ${liveMatches.size} maç bulundu",
                             color = TextMuted, fontSize = 11.sp
                         )
                         Spacer(Modifier.height(10.dp))
@@ -650,6 +716,11 @@ private fun IddaaApp(context: Context) {
                             item { Text("Fikstür alınıyor...", color = GoldLight) }
                         } else if (apiError.isNotBlank()) {
                             item { EmptyPanel("Veri alınamadı", apiError) }
+                        } else if (!hasLoadedFixtures) {
+                            item {
+                                EmptyPanel("Henüz maç yüklenmedi",
+                                    "Tarih seçip Maçları Getir butonuna bas.")
+                            }
                         } else if (shown.isEmpty()) {
                             item {
                                 EmptyPanel("Maç bulunamadı",

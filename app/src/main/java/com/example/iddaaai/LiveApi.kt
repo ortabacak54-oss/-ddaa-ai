@@ -87,8 +87,8 @@ object LiveApi {
         }
     }
 
-    fun getMatches(): List<LiveMatch> {
-        val json = request(API_URL)
+    fun getMatches(date: String): List<LiveMatch> {
+        val json = request("$API_URL?date=$date")
 
         if (json.optString("durum") != "aktif") {
             throw Exception(json.optString("mesaj", "API veri hatası"))
