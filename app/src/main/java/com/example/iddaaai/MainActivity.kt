@@ -50,8 +50,8 @@ data class Forecast(val home: Int, val draw: Int, val away: Int, val over25: Int
     val confidence: Int get() = maxOf(home, draw, away)
 }
 
-data class Pick(val matchId: String, val fixture: String, val market: String, val odds: Double)
-data class Tracked(val matchId: String, val fixture: String, val selection: String, val status: String)
+data class Pick(val matchId: String, val fixture: String, val market: String, val odds: Double, val modelProbability: Double? = null)
+data class Tracked(val matchId: String, val fixture: String, val selection: String, val status: String, val predictedScore: String = "", val modelProbability: Double? = null)
 
 private val sampleMatches = listOf(
     Match("m1", "Galatasaray", "Trabzonspor", "SÜPER LİG", "20:00", .82, .58, 2.1, 1.4),
@@ -256,7 +256,18 @@ private fun IddaaApp(context: Context) {
                             }
                         } else {
                             items(shown, key = { it.id }) { m ->
-                                LiveMatchCard(m) { market, odd ->
+                                LiveMatchCard(m, onAutoAdd = { market, probability, score ->
+                            val autoPick = Pick(m.id, "${m.home} - ${m.away}", market, 0.0, probability)
+                            if (picks.none { it.matchId == m.id && it.market == market }) {
+                                picks = picks + autoPick
+                                savePicks(prefs, picks)
+                            }
+                            if (tracked.none { it.matchId == m.id && it.selection == market }) {
+                                tracked = tracked + Tracked(m.id, "${m.home} - ${m.away}", market, "Bekliyor", score, probability)
+                                saveTracked(prefs, tracked)
+                            }
+                            notice = "$market otomatik olarak kupona ve takibe eklendi."
+                        }) { market, odd ->
                             val pick = Pick(m.id, "${m.home} - ${m.away}", market, odd)
                             if (picks.none { it.matchId == pick.matchId && it.market == pick.market }) {
                                 picks = picks + pick
@@ -291,7 +302,7 @@ private fun IddaaApp(context: Context) {
 
 
 @Composable
-private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
+private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> Unit, onAdd: (String, Double) -> Unit) {
     var odds: MatchOdds? by remember(m.id) { mutableStateOf<MatchOdds?>(null) }
     var oddsLoading: Boolean by remember(m.id) { mutableStateOf(false) }
     var oddsError: String by remember(m.id) { mutableStateOf("") }
@@ -468,7 +479,24 @@ private fun LiveMatchCard(m: LiveMatch, onAdd: (String, Double) -> Unit) {
                 Spacer(Modifier.height(12.dp))
               Spacer(Modifier.height(12.dp))
               Button(
-                  onClick = { analysisDone = true },
+                  onClick = {
+                      val result = PredictionEngine.calculate(
+                          MatchOdds(), homeForm, awayForm, m.home, m.away,
+                          homeStatsAverage, awayStatsAverage
+                      )
+                      val markets = listOf(
+                          "MS 1" to (result.home ?: 0.0),
+                          "MS X" to (result.draw ?: 0.0),
+                          "MS 2" to (result.away ?: 0.0),
+                          "2.5 Alt" to (result.under25 ?: 0.0),
+                          "2.5 Üst" to (result.over25 ?: 0.0),
+                          "KG Var" to (result.bttsYes ?: 0.0),
+                          "KG Yok" to (result.bttsNo ?: 0.0)
+                      )
+                      val best = markets.maxByOrNull { it.second }
+                      if (best != null) onAutoAdd(best.first, best.second, result.predictedScore)
+                      analysisDone = true
+                  },
                   enabled = formLoaded && !statsLoading &&
                       homeStatsAverage?.stats?.isNotEmpty() == true &&
                       awayStatsAverage?.stats?.isNotEmpty() == true,
@@ -662,7 +690,8 @@ private fun MarketButton(label: String, chance: Int, odds: Double, modifier: Mod
 @Composable
 private fun CouponScreen(picks: List<Pick>, stakeText: String, onStake: (String) -> Unit,
                          onRemove: (Pick) -> Unit, onSave: (Pick) -> Unit) {
-    val totalOdds = picks.fold(1.0) { acc, p -> acc * p.odds }
+    val hasModelPick = picks.any { it.modelProbability != null }
+    val totalOdds = picks.filter { it.modelProbability == null }.fold(1.0) { acc, p -> acc * p.odds }
     val stake = stakeText.toDoubleOrNull() ?: 0.0
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
         Text("KUPON OLUŞTURUCU", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
@@ -677,7 +706,12 @@ private fun CouponScreen(picks: List<Pick>, stakeText: String, onStake: (String)
                         verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(p.fixture, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            Text("${p.market}  •  ${p.odds} oran", color = Gold, fontSize = 11.sp)
+                            Text(
+                                if (p.modelProbability != null)
+                                    "${p.market}  •  Model: %.1f%%".format(java.util.Locale.US, p.modelProbability)
+                                else "${p.market}  •  ${p.odds} oran",
+                                color = Gold, fontSize = 11.sp
+                            )
                         }
                         TextButton(onClick = { onRemove(p) }) { Text("Sil", color = Red) }
                     }
@@ -686,11 +720,11 @@ private fun CouponScreen(picks: List<Pick>, stakeText: String, onStake: (String)
         }
         Spacer(Modifier.height(12.dp))
         Text("Kupon oranı", color = TextMuted, fontSize = 11.sp)
-        Text(if (picks.isEmpty()) "—" else String.format("%.2f", totalOdds), color = GoldLight, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+        Text(if (picks.isEmpty() || hasModelPick) "Gerçek oran mevcut değil" else String.format("%.2f", totalOdds), color = GoldLight, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         OutlinedTextField(value = stakeText, onValueChange = onStake, label = { Text("Misli / tutar (₺)") },
             singleLine = true, modifier = Modifier.fillMaxWidth(), colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Gold, focusedLabelColor = Gold, cursorColor = Gold))
-        Text("Olası brüt ödeme: ${if (stake > 0 && picks.isNotEmpty()) String.format("%.2f", stake * totalOdds) else "—"} ₺",
+        Text("Olası brüt ödeme: ${if (stake > 0 && picks.isNotEmpty() && !hasModelPick) String.format("%.2f", stake * totalOdds) else "—"} ₺",
             color = TextMain, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp))
         Button(onClick = { picks.forEach(onSave) }, enabled = picks.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Black)) {
@@ -717,13 +751,19 @@ private fun TrackScreen(records: List<Tracked>, onStatus: (Int, String) -> Unit,
                 Column(Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(13.dp)).padding(13.dp)) {
                     Text(item.fixture, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Text(item.selection, color = Gold, fontSize = 11.sp)
+                        if (item.predictedScore.isNotBlank()) {
+                            Text("Tahmini skor: ${item.predictedScore}", color = TextMuted, fontSize = 11.sp)
+                        }
+                        item.modelProbability?.let {
+                            Text("Model olasılığı: %.1f%%".format(java.util.Locale.US, it), color = TextMuted, fontSize = 11.sp)
+                        }
                     Spacer(Modifier.height(8.dp))
                     Text(
                     item.status,
                     color = when (item.status) {
                         "Kazandı" -> Color(0xFF238636)
                         "Kaybetti" -> Color(0xFFDA3633)
-                        else -> GoldLight
+                        else -> Color(0xFF9CA3AF)
                     },
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
@@ -741,7 +781,7 @@ private fun StatsScreen(items: List<Tracked>) {
     val rate = if (settled.isEmpty()) 0 else (wins * 100.0 / settled.size).roundToInt()
     Column(Modifier.fillMaxSize().padding(18.dp)) {
         Text("PERFORMANS ÖZETİ", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-        Text("Yalnızca elle sonuçlandırılmış takip kayıtları", color = TextMuted, fontSize = 11.sp)
+        Text("Tamamlanan maçların sonuçları otomatik değerlendirilir.", color = TextMuted, fontSize = 11.sp)
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
             StatCard("TAKİP", "${items.size}", Modifier.weight(1f))
@@ -781,12 +821,12 @@ private fun Disclaimer() {
 
 private fun savePicks(prefs: android.content.SharedPreferences, picks: List<Pick>) {
     val arr = JSONArray()
-    picks.forEach { p -> arr.put(JSONObject().put("id", p.matchId).put("fixture", p.fixture).put("market", p.market).put("odds", p.odds)) }
+    picks.forEach { p -> arr.put(JSONObject().put("id", p.matchId).put("fixture", p.fixture).put("market", p.market).put("odds", p.odds).put("modelProbability", p.modelProbability)) }
     prefs.edit().putString("picks", arr.toString()).apply()
 }
 private fun loadPicks(prefs: android.content.SharedPreferences): List<Pick> = try {
     val arr = JSONArray(prefs.getString("picks", "[]"))
-    (0 until arr.length()).map { i -> arr.getJSONObject(i).let { Pick(it.getString("id"), it.getString("fixture"), it.getString("market"), it.getDouble("odds")) } }
+    (0 until arr.length()).map { i -> arr.getJSONObject(i).let { Pick(it.getString("id"), it.getString("fixture"), it.getString("market"), it.getDouble("odds"), if (it.has("modelProbability") && !it.isNull("modelProbability")) it.getDouble("modelProbability") else null) } }
 } catch (_: Exception) { emptyList() }
 
 private fun gradeTracked(records: List<Tracked>, matches: List<LiveMatch>): List<Tracked> {
@@ -827,10 +867,10 @@ private fun gradeTracked(records: List<Tracked>, matches: List<LiveMatch>): List
 
 private fun saveTracked(prefs: android.content.SharedPreferences, items: List<Tracked>) {
     val arr = JSONArray()
-    items.forEach { t -> arr.put(JSONObject().put("id", t.matchId).put("fixture", t.fixture).put("selection", t.selection).put("status", t.status)) }
+    items.forEach { t -> arr.put(JSONObject().put("id", t.matchId).put("fixture", t.fixture).put("selection", t.selection).put("status", t.status).put("predictedScore", t.predictedScore).put("modelProbability", t.modelProbability)) }
     prefs.edit().putString("tracked", arr.toString()).apply()
 }
 private fun loadTracked(prefs: android.content.SharedPreferences): List<Tracked> = try {
     val arr = JSONArray(prefs.getString("tracked", "[]"))
-    (0 until arr.length()).map { i -> arr.getJSONObject(i).let { Tracked(it.optString("id", ""), it.getString("fixture"), it.getString("selection"), it.getString("status")) } }
+    (0 until arr.length()).map { i -> arr.getJSONObject(i).let { Tracked(it.optString("id", ""), it.getString("fixture"), it.getString("selection"), it.getString("status"), it.optString("predictedScore", ""), if (it.has("modelProbability") && !it.isNull("modelProbability")) it.getDouble("modelProbability") else null) } }
 } catch (_: Exception) { emptyList() }
