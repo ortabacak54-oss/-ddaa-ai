@@ -210,6 +210,7 @@ private fun IddaaApp(context: Context) {
     var tracked by remember { mutableStateOf(loadTracked(prefs)) }
     var analysisRecords by remember { mutableStateOf(loadAnalysisRecords(prefs)) }
     var notice by remember { mutableStateOf("") }
+    var showClearRecordsDialog by remember { mutableStateOf(false) }
 
     var showBulkDialog by remember { mutableStateOf(false) }
     var bulkRunning by remember { mutableStateOf(false) }
@@ -275,82 +276,119 @@ private fun IddaaApp(context: Context) {
         bulkRunning = true
 
         bulkScope.launch {
+            suspend fun <T> retryBulk(block: suspend () -> T): T {
+                var lastError: Exception? = null
+                repeat(3) { attempt ->
+                    try {
+                        return block()
+                    } catch (e: Exception) {
+                        lastError = e
+                        if (attempt < 2) delay(1000L * (attempt + 1))
+                    }
+                }
+                throw lastError ?: Exception("Veri alınamadı")
+            }
+
             for (m in selected) {
                 try {
-                    val forms = withContext(Dispatchers.IO) {
-                        val home = LiveApi.getTeamForm(m.homeId)
-                        val away = LiveApi.getTeamForm(m.awayId)
-                        Pair(home, away)
+                    val homeForm = retryBulk {
+                        withContext(Dispatchers.IO) {
+                            LiveApi.getTeamForm(m.homeId)
+                        }
                     }
 
-                    val averages = withContext(Dispatchers.IO) {
-                        val home = LiveApi.getTeamStatsAverage(m.homeId, 5)
-                        val away = LiveApi.getTeamStatsAverage(m.awayId, 5)
-                        Pair(home, away)
+                    val awayForm = retryBulk {
+                        withContext(Dispatchers.IO) {
+                            LiveApi.getTeamForm(m.awayId)
+                        }
                     }
 
-                    if (
-                        forms.first.isEmpty() ||
-                        forms.second.isEmpty() ||
-                        averages.first.stats.isEmpty() ||
-                        averages.second.stats.isEmpty()
-                    ) {
-                        bulkErrors++
-                    } else {
-                        val matchOdds = try {
+                    // Form tekrar indirilmeden istatistikler hesaplanır.
+                    val homeStats = try {
+                        withContext(Dispatchers.IO) {
+                            LiveApi.getTeamStatsAverage(m.homeId, 5, homeForm)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w(
+                            "BulkAnalysis",
+                            "${m.home} istatistik alınamadı: ${e.message}"
+                        )
+                        TeamStatsAverage(m.homeId, 0, emptyList())
+                    }
+
+                    val awayStats = try {
+                        withContext(Dispatchers.IO) {
+                            LiveApi.getTeamStatsAverage(m.awayId, 5, awayForm)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w(
+                            "BulkAnalysis",
+                            "${m.away} istatistik alınamadı: ${e.message}"
+                        )
+                        TeamStatsAverage(m.awayId, 0, emptyList())
+                    }
+
+                    val matchOdds = try {
+                        retryBulk {
                             withContext(Dispatchers.IO) {
                                 LiveApi.getOdds(m.id)
                             }
-                        } catch (_: Exception) {
-                            MatchOdds()
                         }
-
-                        val result = PredictionEngine.calculate(
-                            matchOdds,
-                            forms.first,
-                            forms.second,
-                            m.home,
-                            m.away,
-                            averages.first,
-                            averages.second
-                        )
-
-                        val old = analysisRecords.firstOrNull { it.matchId == m.id }
-
-                        val record = AnalysisRecord(
-                            id = old?.id ?: "${m.id}_${System.currentTimeMillis()}",
-                            matchId = m.id,
-                            fixture = "${m.home} - ${m.away}",
-                            predictedScore = result.predictedScore,
-                            actualScore = old?.actualScore ?: "",
-                            ms1 = result.home ?: 0.0,
-                            msx = result.draw ?: 0.0,
-                            ms2 = result.away ?: 0.0,
-                            over25 = result.over25 ?: 0.0,
-                            under25 = result.under25 ?: 0.0,
-                            bttsYes = result.bttsYes ?: 0.0,
-                            bttsNo = result.bttsNo ?: 0.0,
-                            homeFormSummary = bulkFormSummary(forms.first),
-                            awayFormSummary = bulkFormSummary(forms.second),
-                            homeStatsSummary = bulkStatsSummary(averages.first),
-                            awayStatsSummary = bulkStatsSummary(averages.second),
-                            oddsNote = if (hasUsableOdds(matchOdds))
-                                "Oran verisi analize dahil edildi."
-                            else
-                                "⚠️ Oran bulunamadı – Tahmin yalnızca istatistiksel verilerle oluşturuldu."
-                        )
-
-                        analysisRecords =
-                            analysisRecords.filterNot { it.matchId == m.id } + record
-
-                        saveAnalysisRecords(prefs, analysisRecords)
+                    } catch (_: Exception) {
+                        MatchOdds()
                     }
+
+                    val result = PredictionEngine.calculate(
+                        matchOdds,
+                        homeForm,
+                        awayForm,
+                        m.home,
+                        m.away,
+                        homeStats,
+                        awayStats
+                    )
+
+                    val old = analysisRecords.firstOrNull { it.matchId == m.id }
+
+                    val record = AnalysisRecord(
+                        id = old?.id ?: "${m.id}_${System.currentTimeMillis()}",
+                        matchId = m.id,
+                        fixture = "${m.home} - ${m.away}",
+                        predictedScore = result.predictedScore,
+                        actualScore = old?.actualScore ?: "",
+                        ms1 = result.home ?: 0.0,
+                        msx = result.draw ?: 0.0,
+                        ms2 = result.away ?: 0.0,
+                        over25 = result.over25 ?: 0.0,
+                        under25 = result.under25 ?: 0.0,
+                        bttsYes = result.bttsYes ?: 0.0,
+                        bttsNo = result.bttsNo ?: 0.0,
+                        homeFormSummary = bulkFormSummary(homeForm),
+                        awayFormSummary = bulkFormSummary(awayForm),
+                        homeStatsSummary = bulkStatsSummary(homeStats),
+                        awayStatsSummary = bulkStatsSummary(awayStats),
+                        oddsNote = if (hasUsableOdds(matchOdds))
+                            "Oran verisi analize dahil edildi."
+                        else
+                            "Oran bulunamadı – Tahmin istatistiksel verilerle oluşturuldu."
+                    )
+
+                    analysisRecords =
+                        analysisRecords.filterNot { it.matchId == m.id } + record
+
+                    saveAnalysisRecords(prefs, analysisRecords)
+
                 } catch (e: Exception) {
                     bulkErrors++
+                    android.util.Log.e(
+                        "BulkAnalysis",
+                        "${m.home} - ${m.away}: ${e.message}",
+                        e
+                    )
                 }
 
                 bulkProgress++
-                delay(400)
+                delay(500)
             }
 
             bulkRunning = false
@@ -396,6 +434,38 @@ private fun IddaaApp(context: Context) {
         }
     }
 
+    if (showClearRecordsDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showClearRecordsDialog = false },
+            title = { Text("Analiz kayıtları silinsin mi?") },
+            text = {
+                Text("${analysisRecords.size} analiz kaydı temizlenecek. Bu işlem geri alınamaz.")
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        analysisRecords = emptyList()
+                        saveAnalysisRecords(prefs, analysisRecords)
+                        showClearRecordsDialog = false
+                        notice = "Tüm analiz kayıtları temizlendi."
+                    }
+                ) {
+                    Text("Evet, temizle", color = Gold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showClearRecordsDialog = false }
+                ) {
+                    Text("Vazgeç")
+                }
+            },
+            containerColor = SurfaceDark,
+            titleContentColor = TextMain,
+            textContentColor = TextMain
+        )
+    }
+
     MaterialTheme(colorScheme = darkColorScheme(
         primary = Gold, onPrimary = Black, background = Black, surface = SurfaceDark,
         onBackground = TextMain, onSurface = TextMain, secondary = GoldLight
@@ -406,6 +476,15 @@ private fun IddaaApp(context: Context) {
                     Column(Modifier.weight(1f)) {
                         Text("İDDAA  /  AI", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
                         Text("Maç analiz merkezi", color = TextMain, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    }
+                    androidx.compose.material3.TextButton(
+                        onClick = { showClearRecordsDialog = true },
+                        enabled = analysisRecords.isNotEmpty() && !bulkRunning
+                    ) {
+                        Text(
+                            "Kayıtları Temizle",
+                            color = if (analysisRecords.isNotEmpty() && !bulkRunning) Gold else TextMain
+                        )
                     }
                     Text("BETA", color = Black, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.background(Gold, CircleShape).padding(horizontal = 12.dp, vertical = 7.dp))
