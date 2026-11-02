@@ -195,6 +195,7 @@ private fun IntroScreen(onFinished: () -> Unit) {
     }
 }
 
+@Composable
 private fun IddaaApp(context: Context) {
     val prefs = remember { context.getSharedPreferences("iddaa_ai", Context.MODE_PRIVATE) }
     var tab by remember { mutableStateOf("Maçlar") }
