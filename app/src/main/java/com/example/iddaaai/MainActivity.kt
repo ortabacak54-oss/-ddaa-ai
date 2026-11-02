@@ -1,3 +1,5 @@
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 package com.example.iddaaai
 
 import android.content.Context
