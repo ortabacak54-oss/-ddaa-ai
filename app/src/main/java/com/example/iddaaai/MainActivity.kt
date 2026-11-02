@@ -1,6 +1,12 @@
 package com.example.iddaaai
 
 import android.content.Context
+import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.scale
+import androidx.compose.animation.core.*
+import android.media.ToneGenerator
+import android.media.AudioManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -81,11 +87,114 @@ private fun forecast(m: Match): Forecast {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { IddaaApp(this) }
+        setContent {
+            var showIntro by remember { mutableStateOf(true) }
+            if (showIntro) {
+                IntroScreen { showIntro = false }
+            } else {
+                IddaaApp(this)
+            }
+        }
     }
 }
 
 @Composable
+
+@Composable
+private fun IntroScreen(onFinished: () -> Unit) {
+    var soundEnabled by remember { mutableStateOf(true) }
+
+    val animation = rememberInfiniteTransition(label = "intro")
+    val pulse by animation.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            tween(1000, easing = FastOutSlowInEasing),
+            RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+
+    LaunchedEffect(Unit) {
+        delay(350)
+        if (soundEnabled) {
+            val tone = ToneGenerator(AudioManager.STREAM_MUSIC, 70)
+            tone.startTone(ToneGenerator.TONE_PROP_ACK, 450)
+            delay(500)
+            tone.release()
+        }
+        delay(2200)
+        onFinished()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFF080D19),
+                        Color(0xFF182238),
+                        Color(0xFF080D19)
+                    )
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("⚽", fontSize = 66.sp, modifier = Modifier.scale(pulse))
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "IDDAA AI",
+                color = GoldLight,
+                fontSize = 38.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 5.sp,
+                modifier = Modifier.scale(pulse)
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "AKILLI FUTBOL ANALİZİ",
+                color = TextMuted,
+                fontSize = 12.sp,
+                letterSpacing = 3.sp
+            )
+            Spacer(Modifier.height(42.dp))
+            CircularProgressIndicator(
+                color = Gold,
+                strokeWidth = 3.dp,
+                modifier = Modifier.size(30.dp)
+            )
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "TAHMİNLER HAZIRLANIYOR",
+                color = GoldLight,
+                fontSize = 11.sp,
+                letterSpacing = 2.sp
+            )
+        }
+
+        TextButton(
+            onClick = { soundEnabled = !soundEnabled },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)
+        ) {
+            Text(
+                if (soundEnabled) "SES AÇIK" else "SES KAPALI",
+                color = GoldLight
+            )
+        }
+
+        Text(
+            "POWERED BY IDDAA AI",
+            color = TextMuted,
+            fontSize = 10.sp,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp)
+        )
+    }
+}
+
 private fun IddaaApp(context: Context) {
     val prefs = remember { context.getSharedPreferences("iddaa_ai", Context.MODE_PRIVATE) }
     var tab by remember { mutableStateOf("Maçlar") }
