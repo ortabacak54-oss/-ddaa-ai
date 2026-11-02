@@ -220,7 +220,13 @@ private fun IddaaApp(context: Context) {
                     LiveApi.getMatches()
                 }
                 liveMatches = freshMatches
-            val updatedRecords = updateAnalysisResults(analysisRecords, freshMatches)
+            val updatedRecords = updateAnalysisResults(
+                analysisRecords,
+                freshMatches,
+                { it.id },
+                { it.status },
+                { it.score }
+            )
             if (updatedRecords != analysisRecords) {
                 analysisRecords = updatedRecords
                 saveAnalysisRecords(prefs, analysisRecords)
@@ -1079,28 +1085,32 @@ private fun loadAnalysisRecords(
     }
 }
 
-private fun updateAnalysisResults(
+private fun <T> updateAnalysisResults(
     records: List<AnalysisRecord>,
-    matches: List<LiveMatch>
+    matches: List<T>,
+    getId: (T) -> String,
+    getStatus: (T) -> String,
+    getScore: (T) -> String
 ): List<AnalysisRecord> {
     return records.map { record ->
         if (record.actualScore.isNotBlank()) return@map record
 
-        val match = matches.firstOrNull { it.id == record.matchId }
+        val match = matches.firstOrNull { getId(it) == record.matchId }
             ?: return@map record
 
-        val finished = match.status.uppercase() in
+        val finished = getStatus(match).uppercase() in
             listOf("FT", "AET", "PEN", "FINISHED", "ENDED")
 
-        val score = match.score
-        val numbers = Regex("\\d+").findAll(score).map { it.value }.toList()
+        val numbers = Regex("\d+").findAll(getScore(match))
+            .map { it.value }.toList()
 
         if (finished && numbers.size >= 2) {
             record.copy(actualScore = "${numbers[0]}-${numbers[1]}")
-        } else record
+        } else {
+            record
+        }
     }
 }
-
 private fun analysisMarketWon(market: String, score: String): Boolean? {
     val n = Regex("\\d+").findAll(score).mapNotNull { it.value.toIntOrNull() }.toList()
     if (n.size < 2) return null
