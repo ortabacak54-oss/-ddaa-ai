@@ -255,13 +255,13 @@ private fun IddaaApp(context: Context) {
 
         val selected = liveMatches.filter { m ->
             val status = m.status.uppercase()
-            val finished = status in listOf("FT", "AET", "PEN", "FINISHED", "ENDED")
             val live = status in listOf("1H", "2H", "HT", "ET", "BT", "P", "LIVE")
 
             val categoryMatch = when (category) {
-                "Süper Lig" -> isSuperLigMatch(m.home, m.away) && !finished
-                "Avrupa" -> !isSuperLigMatch(m.home, m.away) && !finished
+                "Süper Lig" -> isSuperLigMatch(m.home, m.away)
+                "Avrupa" -> !isSuperLigMatch(m.home, m.away)
                 "Canlı" -> live
+                "Tüm Maçlar (Canlı Hariç)" -> !live
                 else -> false
             }
 
@@ -606,7 +606,7 @@ private fun IddaaApp(context: Context) {
                                 title = { Text("Toplu Analiz") },
                                 text = {
                                     Column {
-                                        listOf("Avrupa", "Süper Lig", "Canlı").forEach { choice ->
+                                        listOf("Tüm Maçlar (Canlı Hariç)", "Avrupa", "Süper Lig", "Canlı").forEach { choice ->
                                             TextButton(
                                                 onClick = {
                                                     showBulkDialog = false
