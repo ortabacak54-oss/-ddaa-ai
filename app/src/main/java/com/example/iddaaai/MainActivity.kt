@@ -251,8 +251,8 @@ private fun IddaaApp(context: Context) {
             val live = status in listOf("1H", "2H", "HT", "ET", "BT", "P", "LIVE")
 
             val categoryMatch = when (category) {
-                "Süper Lig" -> isSuperLigLeague(m.league) && !finished
-                "Avrupa" -> !isSuperLigLeague(m.league) && !finished
+                "Süper Lig" -> isSuperLigMatch(m.home, m.away) && !finished
+                "Avrupa" -> !isSuperLigMatch(m.home, m.away) && !finished
                 "Canlı" -> live
                 else -> false
             }
@@ -1216,6 +1216,38 @@ private fun loadTracked(prefs: android.content.SharedPreferences): List<Tracked>
 
 
 
+
+
+private fun isSuperLigTeam(team: String): Boolean {
+    val name = java.text.Normalizer.normalize(
+        team.lowercase(),
+        java.text.Normalizer.Form.NFD
+    ).replace("\\p{Mn}+".toRegex(), "")
+     .replace("ı", "i")
+     .replace(Regex("[^a-z0-9]"), "")
+
+    if (name.contains("u19") || name.contains("u21") ||
+        name.contains("rezerv") || name.contains("reserve")) return false
+
+    val teams = listOf(
+        "alanyaspor", "amed", "amedsportif", "amedspor",
+        "basaksehir", "istanbulbasaksehir",
+        "besiktas", "corum", "corumfk",
+        "erzurumspor", "erzurumsporfk",
+        "eyupspor", "fenerbahce", "galatasaray",
+        "gaziantep", "gaziantepfk",
+        "genclerbirligi", "goztepe",
+        "kasimpasa", "kocaelispor", "konyaspor",
+        "rizespor", "caykurrizespor",
+        "samsunspor", "trabzonspor"
+    )
+
+    return teams.any { name.contains(it) }
+}
+
+private fun isSuperLigMatch(home: String, away: String): Boolean {
+    return isSuperLigTeam(home) && isSuperLigTeam(away)
+}
 
 private fun isSuperLigLeague(name: String): Boolean {
     val normalized = java.text.Normalizer.normalize(
