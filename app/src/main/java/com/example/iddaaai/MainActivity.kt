@@ -1,6 +1,8 @@
+package com.example.iddaaai
+
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
-package com.example.iddaaai
+
 
 import android.content.Context
 import kotlinx.coroutines.delay
@@ -1101,7 +1103,7 @@ private fun <T> updateAnalysisResults(
         val finished = getStatus(match).uppercase() in
             listOf("FT", "AET", "PEN", "FINISHED", "ENDED")
 
-        val numbers = Regex("\d+").findAll(getScore(match))
+        val numbers = Regex("\\d+").findAll(getScore(match))
             .map { it.value }.toList()
 
         if (finished && numbers.size >= 2) {
