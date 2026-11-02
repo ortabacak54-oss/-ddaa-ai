@@ -204,6 +204,7 @@ private fun IddaaApp(context: Context) {
     var stakeText by remember { mutableStateOf("100") }
     var picks by remember { mutableStateOf(loadPicks(prefs)) }
     var tracked by remember { mutableStateOf(loadTracked(prefs)) }
+    var analysisRecords by remember { mutableStateOf(loadAnalysisRecords(prefs)) }
     var notice by remember { mutableStateOf("") }
 
     var liveMatches by remember { mutableStateOf<List<LiveMatch>>(emptyList()) }
@@ -217,6 +218,11 @@ private fun IddaaApp(context: Context) {
                     LiveApi.getMatches()
                 }
                 liveMatches = freshMatches
+            val updatedRecords = updateAnalysisResults(analysisRecords, freshMatches)
+            if (updatedRecords != analysisRecords) {
+                analysisRecords = updatedRecords
+                saveAnalysisRecords(prefs, analysisRecords)
+            }
                 apiError = ""
 
                 val updatedTracked = gradeTracked(tracked, freshMatches)
@@ -251,7 +257,7 @@ private fun IddaaApp(context: Context) {
                 Spacer(Modifier.height(14.dp))
                 Row(Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(14.dp)).padding(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    listOf("Maçlar", "Kupon", "Takip", "İstatistik").forEach { name ->
+                    listOf("Maçlar", "Kupon", "Takip", "Kayıtlar", "İstatistik").forEach { name ->
                         val active = tab == name
                         Box(Modifier.weight(1f).background(if (active) Gold else Color.Transparent, RoundedCornerShape(10.dp))
                             .clickable { tab = name }.padding(vertical = 11.dp), contentAlignment = Alignment.Center) {
@@ -375,6 +381,10 @@ private fun IddaaApp(context: Context) {
                                 saveTracked(prefs, tracked)
                             }
                             notice = "$market otomatik olarak kupona ve takibe eklendi."
+                        }, onSaveAnalysis = { record ->
+                            analysisRecords = analysisRecords + record
+                            saveAnalysisRecords(prefs, analysisRecords)
+                            notice = "Tüm tahminler Kayıtlar sekmesine eklendi."
                         }) { market, odd ->
                             val pick = Pick(m.id, "${m.home} - ${m.away}", market, odd)
                             if (picks.none { it.matchId == pick.matchId && it.market == pick.market }) {
@@ -398,6 +408,7 @@ private fun IddaaApp(context: Context) {
                     picks = emptyList(); savePicks(prefs, picks)
                     notice = "Kupon seçimleri takip listesine eklendi."
                 })
+                "Kayıtlar" -> AnalysisRecordsScreen(analysisRecords)
                 "Takip" -> TrackScreen(tracked, { index, status ->
                     tracked = tracked.mapIndexed { i, t -> if (i == index) t.copy(status = status) else t }
                     saveTracked(prefs, tracked)
@@ -410,7 +421,7 @@ private fun IddaaApp(context: Context) {
 
 
 @Composable
-private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> Unit, onAdd: (String, Double) -> Unit) {
+private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> Unit, onSaveAnalysis: (AnalysisRecord) -> Unit, onAdd: (String, Double) -> Unit) {
     var odds: MatchOdds? by remember(m.id) { mutableStateOf<MatchOdds?>(null) }
     var oddsLoading: Boolean by remember(m.id) { mutableStateOf(false) }
     var oddsError: String by remember(m.id) { mutableStateOf("") }
@@ -603,6 +614,21 @@ private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> U
                       )
                       val best = markets.maxByOrNull { it.second }
                       if (best != null) onAutoAdd(best.first, best.second, result.predictedScore)
+                        onSaveAnalysis(
+                            AnalysisRecord(
+                                id = "${m.id}_${System.currentTimeMillis()}",
+                                matchId = m.id,
+                                fixture = "${m.home} - ${m.away}",
+                                predictedScore = result.predictedScore,
+                                ms1 = result.home ?: 0.0,
+                                msx = result.draw ?: 0.0,
+                                ms2 = result.away ?: 0.0,
+                                over25 = result.over25 ?: 0.0,
+                                under25 = result.under25 ?: 0.0,
+                                bttsYes = result.bttsYes ?: 0.0,
+                                bttsNo = result.bttsNo ?: 0.0
+                            )
+                        )
                       analysisDone = true
                   },
                   enabled = formLoaded && !statsLoading &&
@@ -982,3 +1008,210 @@ private fun loadTracked(prefs: android.content.SharedPreferences): List<Tracked>
     val arr = JSONArray(prefs.getString("tracked", "[]"))
     (0 until arr.length()).map { i -> arr.getJSONObject(i).let { Tracked(it.optString("id", ""), it.getString("fixture"), it.getString("selection"), it.getString("status"), it.optString("predictedScore", ""), if (it.has("modelProbability") && !it.isNull("modelProbability")) it.getDouble("modelProbability") else null) } }
 } catch (_: Exception) { emptyList() }
+
+
+
+data class AnalysisRecord(
+    val id: String,
+    val matchId: String,
+    val fixture: String,
+    val predictedScore: String,
+    val actualScore: String = "",
+    val ms1: Double,
+    val msx: Double,
+    val ms2: Double,
+    val over25: Double,
+    val under25: Double,
+    val bttsYes: Double,
+    val bttsNo: Double
+)
+
+private fun saveAnalysisRecords(
+    prefs: android.content.SharedPreferences,
+    records: List<AnalysisRecord>
+) {
+    val array = JSONArray()
+    records.forEach { r ->
+        array.put(JSONObject().apply {
+            put("id", r.id)
+            put("matchId", r.matchId)
+            put("fixture", r.fixture)
+            put("predictedScore", r.predictedScore)
+            put("actualScore", r.actualScore)
+            put("ms1", r.ms1)
+            put("msx", r.msx)
+            put("ms2", r.ms2)
+            put("over25", r.over25)
+            put("under25", r.under25)
+            put("bttsYes", r.bttsYes)
+            put("bttsNo", r.bttsNo)
+        })
+    }
+    prefs.edit().putString("analysis_records", array.toString()).apply()
+}
+
+private fun loadAnalysisRecords(
+    prefs: android.content.SharedPreferences
+): List<AnalysisRecord> {
+    return try {
+        val array = JSONArray(prefs.getString("analysis_records", "[]"))
+        (0 until array.length()).map { i ->
+            val o = array.getJSONObject(i)
+            AnalysisRecord(
+                id = o.optString("id"),
+                matchId = o.optString("matchId"),
+                fixture = o.optString("fixture"),
+                predictedScore = o.optString("predictedScore"),
+                actualScore = o.optString("actualScore"),
+                ms1 = o.optDouble("ms1"),
+                msx = o.optDouble("msx"),
+                ms2 = o.optDouble("ms2"),
+                over25 = o.optDouble("over25"),
+                under25 = o.optDouble("under25"),
+                bttsYes = o.optDouble("bttsYes"),
+                bttsNo = o.optDouble("bttsNo")
+            )
+        }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun updateAnalysisResults(
+    records: List<AnalysisRecord>,
+    matches: List<LiveMatch>
+): List<AnalysisRecord> {
+    return records.map { record ->
+        if (record.actualScore.isNotBlank()) return@map record
+
+        val match = matches.firstOrNull { it.id == record.matchId }
+            ?: return@map record
+
+        val finished = match.status.uppercase() in
+            listOf("FT", "AET", "PEN", "FINISHED", "ENDED")
+
+        val score = match.score
+        val numbers = Regex("\\d+").findAll(score).map { it.value }.toList()
+
+        if (finished && numbers.size >= 2) {
+            record.copy(actualScore = "${numbers[0]}-${numbers[1]}")
+        } else record
+    }
+}
+
+private fun analysisMarketWon(market: String, score: String): Boolean? {
+    val n = Regex("\\d+").findAll(score).mapNotNull { it.value.toIntOrNull() }.toList()
+    if (n.size < 2) return null
+
+    val h = n[0]
+    val a = n[1]
+    return when (market) {
+        "MS 1" -> h > a
+        "MS X" -> h == a
+        "MS 2" -> h < a
+        "2.5 Üst" -> h + a >= 3
+        "2.5 Alt" -> h + a <= 2
+        "KG Var" -> h > 0 && a > 0
+        "KG Yok" -> h == 0 || a == 0
+        else -> null
+    }
+}
+
+private fun exactAnalysisScore(record: AnalysisRecord): Boolean? {
+    if (record.actualScore.isBlank()) return null
+    val predicted = Regex("\\d+").findAll(record.predictedScore).map { it.value }.toList()
+    val actual = Regex("\\d+").findAll(record.actualScore).map { it.value }.toList()
+    if (predicted.size < 2 || actual.size < 2) return false
+    return predicted[0] == actual[0] && predicted[1] == actual[1]
+}
+
+
+@Composable
+private fun AnalysisRecordsScreen(records: List<AnalysisRecord>) {
+    val filters = remember {
+        androidx.compose.runtime.mutableStateListOf("", "", "", "", "", "", "", "", "", "")
+    }
+    val headers = listOf(
+        "Maç", "Tahmin Skor", "Gerçek Skor", "MS1 %", "MSX %",
+        "MS2 %", "2.5 Üst %", "2.5 Alt %", "KG Var %", "KG Yok %"
+    )
+    val widths = listOf(190.dp, 105.dp, 105.dp, 75.dp, 75.dp, 75.dp, 90.dp, 90.dp, 85.dp, 85.dp)
+
+    fun cells(r: AnalysisRecord) = listOf(
+        r.fixture, r.predictedScore, r.actualScore,
+        "%.1f".format(java.util.Locale.US, r.ms1),
+        "%.1f".format(java.util.Locale.US, r.msx),
+        "%.1f".format(java.util.Locale.US, r.ms2),
+        "%.1f".format(java.util.Locale.US, r.over25),
+        "%.1f".format(java.util.Locale.US, r.under25),
+        "%.1f".format(java.util.Locale.US, r.bttsYes),
+        "%.1f".format(java.util.Locale.US, r.bttsNo)
+    )
+
+    val filtered = records.filter { r ->
+        val row = cells(r)
+        filters.indices.all { i ->
+            filters[i].isBlank() || row[i].contains(filters[i].trim(), true)
+        }
+    }.reversed()
+
+    Column(Modifier.fillMaxSize().background(Black).padding(8.dp)) {
+        Text("MAÇ ANALİZ KAYITLARI", color = Gold, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("${filtered.size} / ${records.size} kayıt", color = TextMuted, fontSize = 12.sp)
+
+        if (records.isEmpty()) {
+            Text(
+                "Henüz kayıt yok. Maçlar sekmesinde ANALİZ ET'e basınca kayıt oluşacak.",
+                color = TextMuted,
+                modifier = Modifier.padding(12.dp)
+            )
+        } else {
+            Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                Column(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())) {
+                    Row {
+                        headers.forEachIndexed { i, title ->
+                            Box(Modifier.width(widths[i]).background(Surface2).padding(8.dp)) {
+                                Text(title, color = GoldLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    Row {
+                        filters.forEachIndexed { i, value ->
+                            OutlinedTextField(
+                                value = value,
+                                onValueChange = { filters[i] = it },
+                                modifier = Modifier.width(widths[i]).padding(2.dp),
+                                singleLine = true,
+                                placeholder = { Text("Ara...", fontSize = 10.sp) },
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 10.sp, color = TextMain)
+                            )
+                        }
+                    }
+                    filtered.forEach { r ->
+                        val row = cells(r)
+                        Row(Modifier.padding(vertical = 2.dp).background(SurfaceDark)) {
+                            row.forEachIndexed { i, value ->
+                                val color = when {
+                                    i == 0 -> TextMain
+                                    r.actualScore.isBlank() -> TextMuted
+                                    i == 1 -> if (exactAnalysisScore(r) == true) Green else Red
+                                    i == 2 -> GoldLight
+                                    else -> {
+                                        val market = listOf(
+                                            "", "", "", "MS 1", "MS X", "MS 2",
+                                            "2.5 Üst", "2.5 Alt", "KG Var", "KG Yok"
+                                        )[i]
+                                        if (analysisMarketWon(market, r.actualScore) == true) Green else Red
+                                    }
+                                }
+                                Box(Modifier.width(widths[i]).padding(8.dp)) {
+                                    Text(value.ifBlank { "—" }, color = color, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
