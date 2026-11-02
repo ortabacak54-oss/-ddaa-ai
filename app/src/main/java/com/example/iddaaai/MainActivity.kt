@@ -99,8 +99,6 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-
-@Composable
 private fun IntroScreen(onFinished: () -> Unit) {
     var soundEnabled by remember { mutableStateOf(true) }
 
