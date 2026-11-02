@@ -211,8 +211,143 @@ private fun IddaaApp(context: Context) {
     var analysisRecords by remember { mutableStateOf(loadAnalysisRecords(prefs)) }
     var notice by remember { mutableStateOf("") }
 
+    var showBulkDialog by remember { mutableStateOf(false) }
+    var bulkRunning by remember { mutableStateOf(false) }
+    var bulkProgress by remember { mutableIntStateOf(0) }
+    var bulkTotal by remember { mutableIntStateOf(0) }
+    var bulkErrors by remember { mutableIntStateOf(0) }
+    val bulkScope = rememberCoroutineScope()
+
+
     var liveMatches by remember { mutableStateOf<List<LiveMatch>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+
+    fun bulkFormSummary(form: List<TeamFormMatch>): String {
+        val recent = form.take(5)
+        val w = recent.count { it.goalsFor > it.goalsAgainst }
+        val d = recent.count { it.goalsFor == it.goalsAgainst }
+        val l = recent.count { it.goalsFor < it.goalsAgainst }
+        val n = recent.size.coerceAtLeast(1)
+        val gf = recent.sumOf { it.goalsFor }
+        val ga = recent.sumOf { it.goalsAgainst }
+        return "Son ${recent.size}: $w G / $d B / $l M | " +
+            "Atılan ort. ${"%.2f".format(java.util.Locale.US, gf.toDouble()/n)} | " +
+            "Yenilen ort. ${"%.2f".format(java.util.Locale.US, ga.toDouble()/n)}"
+    }
+
+    fun bulkStatsSummary(data: TeamStatsAverage): String {
+        return "İncelenen ${data.games} maç | " +
+            data.stats.joinToString(" • ") {
+                "${it.name}: ${"%.1f".format(java.util.Locale.US, it.average)}"
+            }.ifBlank { "İstatistik bulunamadı" }
+    }
+
+    fun startBulkAnalysis(category: String) {
+        if (bulkRunning) return
+
+        val selected = liveMatches.filter { m ->
+            val status = m.status.uppercase()
+            val finished = status in listOf("FT", "AET", "PEN", "FINISHED", "ENDED")
+            val live = status in listOf("1H", "2H", "HT", "ET", "BT", "P", "LIVE")
+
+            val categoryMatch = when (category) {
+                "Süper Lig" -> m.league.contains("Süper Lig", true) && !finished
+                "Avrupa" -> !m.league.contains("Süper Lig", true) && !finished
+                "Canlı" -> live
+                else -> false
+            }
+
+            categoryMatch &&
+                m.id.isNotBlank() &&
+                m.homeId.isNotBlank() &&
+                m.awayId.isNotBlank()
+        }
+
+        bulkProgress = 0
+        bulkTotal = selected.size
+        bulkErrors = 0
+
+        if (selected.isEmpty()) {
+            notice = "Bu kategoride analiz edilecek maç bulunamadı."
+            return
+        }
+
+        bulkRunning = true
+
+        bulkScope.launch {
+            for (m in selected) {
+                try {
+                    val forms = withContext(Dispatchers.IO) {
+                        val home = LiveApi.getTeamForm(m.homeId)
+                        val away = LiveApi.getTeamForm(m.awayId)
+                        Pair(home, away)
+                    }
+
+                    val averages = withContext(Dispatchers.IO) {
+                        val home = LiveApi.getTeamStatsAverage(m.homeId, 5)
+                        val away = LiveApi.getTeamStatsAverage(m.awayId, 5)
+                        Pair(home, away)
+                    }
+
+                    if (
+                        forms.first.isEmpty() ||
+                        forms.second.isEmpty() ||
+                        averages.first.stats.isEmpty() ||
+                        averages.second.stats.isEmpty()
+                    ) {
+                        bulkErrors++
+                    } else {
+                        // Bilerek MatchOdds() kullanılıyor: hiçbir oran API çağrısı yapılmıyor.
+                        val result = PredictionEngine.calculate(
+                            MatchOdds(),
+                            forms.first,
+                            forms.second,
+                            m.home,
+                            m.away,
+                            averages.first,
+                            averages.second
+                        )
+
+                        val old = analysisRecords.firstOrNull { it.matchId == m.id }
+
+                        val record = AnalysisRecord(
+                            id = old?.id ?: "${m.id}_${System.currentTimeMillis()}",
+                            matchId = m.id,
+                            fixture = "${m.home} - ${m.away}",
+                            predictedScore = result.predictedScore,
+                            actualScore = old?.actualScore ?: "",
+                            ms1 = result.home ?: 0.0,
+                            msx = result.draw ?: 0.0,
+                            ms2 = result.away ?: 0.0,
+                            over25 = result.over25 ?: 0.0,
+                            under25 = result.under25 ?: 0.0,
+                            bttsYes = result.bttsYes ?: 0.0,
+                            bttsNo = result.bttsNo ?: 0.0,
+                            homeFormSummary = bulkFormSummary(forms.first),
+                            awayFormSummary = bulkFormSummary(forms.second),
+                            homeStatsSummary = bulkStatsSummary(averages.first),
+                            awayStatsSummary = bulkStatsSummary(averages.second)
+                        )
+
+                        analysisRecords =
+                            analysisRecords.filterNot { it.matchId == m.id } + record
+
+                        saveAnalysisRecords(prefs, analysisRecords)
+                    }
+                } catch (e: Exception) {
+                    bulkErrors++
+                }
+
+                bulkProgress++
+                delay(400)
+            }
+
+            bulkRunning = false
+            notice = "Toplu analiz tamamlandı: " +
+                "${bulkTotal - bulkErrors}/${bulkTotal} başarılı, $bulkErrors hatalı."
+        }
+    }
+
     var apiError by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
@@ -284,6 +419,58 @@ private fun IddaaApp(context: Context) {
                     Column(Modifier.padding(horizontal = 18.dp)) {
                         Text("GERÇEK MAÇ FİKSTÜRÜ", color = TextMain,
                             fontWeight = FontWeight.Bold, fontSize = 14.sp)
+
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = { showBulkDialog = true },
+                            enabled = !bulkRunning,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("TOPLU ANALİZ")
+                        }
+
+                        if (bulkRunning) {
+                            Text(
+                                "Analiz edilen $bulkProgress / $bulkTotal • Hatalı: $bulkErrors",
+                                color = GoldLight,
+                                fontSize = 12.sp
+                            )
+                            LinearProgressIndicator(
+                                progress = {
+                                    if (bulkTotal > 0)
+                                        bulkProgress.toFloat() / bulkTotal
+                                    else 0f
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        if (showBulkDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showBulkDialog = false },
+                                title = { Text("Toplu Analiz") },
+                                text = {
+                                    Column {
+                                        listOf("Avrupa", "Süper Lig", "Canlı").forEach { choice ->
+                                            TextButton(
+                                                onClick = {
+                                                    showBulkDialog = false
+                                                    startBulkAnalysis(choice)
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(choice)
+                                            }
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { showBulkDialog = false }) {
+                                        Text("Kapat")
+                                    }
+                                }
+                            )
+                        }
                         Text(
                             if (loading) "Fikstür yükleniyor..."
                             else "${liveMatches.size} maç bulundu • API-Football",
@@ -392,7 +579,15 @@ private fun IddaaApp(context: Context) {
                             }
                             notice = "$market otomatik olarak kupona ve takibe eklendi."
                         }, onSaveAnalysis = { record ->
-                            analysisRecords = analysisRecords + record
+                            val oldRecord = analysisRecords.firstOrNull {
+                                it.matchId == record.matchId
+                            }
+                            analysisRecords =
+                                analysisRecords.filterNot {
+                                    it.matchId == record.matchId
+                                } + record.copy(
+                                    actualScore = oldRecord?.actualScore ?: record.actualScore
+                                )
                             saveAnalysisRecords(prefs, analysisRecords)
                             notice = "Tüm tahminler Kayıtlar sekmesine eklendi."
                         }) { market, odd ->
@@ -1033,7 +1228,11 @@ data class AnalysisRecord(
     val over25: Double,
     val under25: Double,
     val bttsYes: Double,
-    val bttsNo: Double
+    val bttsNo: Double,
+    val homeFormSummary: String = "",
+    val awayFormSummary: String = "",
+    val homeStatsSummary: String = "",
+    val awayStatsSummary: String = ""
 )
 
 private fun saveAnalysisRecords(
@@ -1055,6 +1254,10 @@ private fun saveAnalysisRecords(
             put("under25", r.under25)
             put("bttsYes", r.bttsYes)
             put("bttsNo", r.bttsNo)
+            put("homeFormSummary", r.homeFormSummary)
+            put("awayFormSummary", r.awayFormSummary)
+            put("homeStatsSummary", r.homeStatsSummary)
+            put("awayStatsSummary", r.awayStatsSummary)
         })
     }
     prefs.edit().putString("analysis_records", array.toString()).apply()
@@ -1079,7 +1282,11 @@ private fun loadAnalysisRecords(
                 over25 = o.optDouble("over25"),
                 under25 = o.optDouble("under25"),
                 bttsYes = o.optDouble("bttsYes"),
-                bttsNo = o.optDouble("bttsNo")
+                bttsNo = o.optDouble("bttsNo"),
+                homeFormSummary = o.optString("homeFormSummary", ""),
+                awayFormSummary = o.optString("awayFormSummary", ""),
+                homeStatsSummary = o.optString("homeStatsSummary", ""),
+                awayStatsSummary = o.optString("awayStatsSummary", "")
             )
         }
     } catch (_: Exception) {
