@@ -357,12 +357,22 @@ private fun IddaaApp(context: Context) {
 
                     val old = analysisRecords.firstOrNull { it.matchId == m.id }
 
+                    val scoreNumbers = Regex("\\d+").findAll(m.score)
+                        .map { it.value }.toList()
+                    val finished = m.status.uppercase() in
+                        listOf("FT", "AET", "PEN", "FINISHED", "ENDED")
+                    val actualScore = if (finished && scoreNumbers.size >= 2) {
+                        "${scoreNumbers[0]}-${scoreNumbers[1]}"
+                    } else {
+                        old?.actualScore ?: ""
+                    }
+
                     val record = AnalysisRecord(
                         id = old?.id ?: "${m.id}_${System.currentTimeMillis()}",
                         matchId = m.id,
                         fixture = "${m.home} - ${m.away}",
-                        predictedScore = result.predictedScore,
-                        actualScore = old?.actualScore ?: "",
+                        predictedScore = "",
+                        actualScore = actualScore,
                         ms1 = result.home ?: 0.0,
                         msx = result.draw ?: 0.0,
                         ms2 = result.away ?: 0.0,
@@ -1585,16 +1595,16 @@ private fun exactAnalysisScore(record: AnalysisRecord): Boolean? {
 @Composable
 private fun AnalysisRecordsScreen(records: List<AnalysisRecord>) {
     val filters = remember {
-        androidx.compose.runtime.mutableStateListOf("", "", "", "", "", "", "", "", "", "")
+        androidx.compose.runtime.mutableStateListOf("", "", "", "", "", "", "", "", "")
     }
     val headers = listOf(
-        "Maç", "Tahmin Skor", "Gerçek Skor", "MS1 %", "MSX %",
+        "Maç", "Gerçek Skor", "MS1 %", "MSX %",
         "MS2 %", "2.5 Üst %", "2.5 Alt %", "KG Var %", "KG Yok %"
     )
-    val widths = listOf(190.dp, 105.dp, 105.dp, 75.dp, 75.dp, 75.dp, 90.dp, 90.dp, 85.dp, 85.dp)
+    val widths = listOf(190.dp, 105.dp, 75.dp, 75.dp, 75.dp, 90.dp, 90.dp, 85.dp, 85.dp)
 
     fun cells(r: AnalysisRecord) = listOf(
-        r.fixture, r.predictedScore, r.actualScore,
+        r.fixture, r.actualScore,
         "%.1f".format(java.util.Locale.US, r.ms1),
         "%.1f".format(java.util.Locale.US, r.msx),
         "%.1f".format(java.util.Locale.US, r.ms2),
@@ -1649,12 +1659,12 @@ private fun AnalysisRecordsScreen(records: List<AnalysisRecord>) {
                             row.forEachIndexed { i, value ->
                                 val color = when {
                                     i == 0 -> TextMain
+                                    i == 1 && r.actualScore.isBlank() -> TextMuted
+                                    i == 1 -> GoldLight
                                     r.actualScore.isBlank() -> TextMuted
-                                    i == 1 -> if (exactAnalysisScore(r) == true) Green else Red
-                                    i == 2 -> GoldLight
                                     else -> {
                                         val market = listOf(
-                                            "", "", "", "MS 1", "MS X", "MS 2",
+                                            "", "", "MS 1", "MS X", "MS 2",
                                             "2.5 Üst", "2.5 Alt", "KG Var", "KG Yok"
                                         )[i]
                                         if (analysisMarketWon(market, r.actualScore) == true) Green else Red
