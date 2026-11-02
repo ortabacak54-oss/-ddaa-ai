@@ -169,8 +169,12 @@ object LiveApi {
         return MatchStats(fixtureId, stats)
     }
 
-    fun getTeamStatsAverage(teamId: String, limit: Int = 5): TeamStatsAverage {
-        val history = getTeamForm(teamId)
+    fun getTeamStatsAverage(
+        teamId: String,
+        limit: Int = 5,
+        knownForm: List<TeamFormMatch>? = null
+    ): TeamStatsAverage {
+        val history = (knownForm ?: getTeamForm(teamId))
             .filter { it.id.isNotBlank() && it.matchSlug.isNotBlank() }
             .take(limit)
 
