@@ -251,8 +251,8 @@ private fun IddaaApp(context: Context) {
             val live = status in listOf("1H", "2H", "HT", "ET", "BT", "P", "LIVE")
 
             val categoryMatch = when (category) {
-                "Süper Lig" -> m.league.contains("Süper Lig", true) && !finished
-                "Avrupa" -> !m.league.contains("Süper Lig", true) && !finished
+                "Süper Lig" -> isSuperLigLeague(m.league) && !finished
+                "Avrupa" -> !isSuperLigLeague(m.league) && !finished
                 "Canlı" -> live
                 else -> false
             }
@@ -537,8 +537,8 @@ private fun IddaaApp(context: Context) {
 
                 val shown = liveMatches.filter { match ->
                     val leagueMatch = filter == "Tümü" ||
-                        (filter == "Süper Lig" && match.league.contains("Süper Lig", true)) ||
-                        (filter == "Avrupa" && !match.league.contains("Süper Lig", true))
+                        (filter == "Süper Lig" && isSuperLigLeague(match.league)) ||
+                        (filter == "Avrupa" && !isSuperLigLeague(match.league))
 
                     val queryMatch = searchQuery.isBlank() ||
                         match.home.contains(searchQuery.trim(), true) ||
@@ -1215,6 +1215,18 @@ private fun loadTracked(prefs: android.content.SharedPreferences): List<Tracked>
 } catch (_: Exception) { emptyList() }
 
 
+
+
+private fun isSuperLigLeague(name: String): Boolean {
+    val normalized = java.text.Normalizer.normalize(
+        name.lowercase(),
+        java.text.Normalizer.Form.NFD
+    ).replace("\\p{Mn}+".toRegex(), "")
+        .replace("ı", "i")
+
+    return normalized.contains("super lig") ||
+        normalized.contains("superleague")
+}
 
 data class AnalysisRecord(
     val id: String,
