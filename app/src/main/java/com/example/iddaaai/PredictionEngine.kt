@@ -168,9 +168,15 @@ object PredictionEngine {
         val finalBtts = if (btts.all { it != null }) btts else listOf(modelBtts, 100.0 - modelBtts)
 
         // Her pazarda en yüksek yüzdeye sahip seçeneği belirle.
-        val selectedResult = adjustedResult.indices.maxByOrNull { adjustedResult[it] } ?: 0
-        val selectedGoal = finalGoals.indices.maxByOrNull { finalGoals[it] } ?: 0
-        val selectedBtts = finalBtts.indices.maxByOrNull { finalBtts[it] } ?: 0
+        val selectedResult = adjustedResult.indices.maxByOrNull {
+            adjustedResult[it] ?: Double.NEGATIVE_INFINITY
+        } ?: 0
+        val selectedGoal = finalGoals.indices.maxByOrNull {
+            finalGoals[it] ?: Double.NEGATIVE_INFINITY
+        } ?: 0
+        val selectedBtts = finalBtts.indices.maxByOrNull {
+            finalBtts[it] ?: Double.NEGATIVE_INFINITY
+        } ?: 0
 
         // Seçilen üç tahminle en fazla uyuşan, Poisson olasılığı en yüksek skoru bul.
         fun scoreMatches(score: Triple<Int, Int, Double>): Int {
