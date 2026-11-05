@@ -1165,10 +1165,7 @@ private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> U
                   )
               }
 
-              if (analysisDone &&
-                  homeStatsAverage?.stats?.isNotEmpty() == true &&
-                  awayStatsAverage?.stats?.isNotEmpty() == true
-              ) {
+              if (analysisDone) {
                   val prediction = PredictionEngine.calculate(
                       odds ?: MatchOdds(), homeForm, awayForm, m.home, m.away,
                       homeStatsAverage, awayStatsAverage
@@ -1205,7 +1202,87 @@ private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> U
                   ), color = TextMain, fontSize = 12.sp)
                   Text("En yüksek model olasılığı: ${prediction.bestPick}",
                       color = GoldLight, fontWeight = FontWeight.Bold)
-                  Text("Tahmin yalnızca takım formu ve son maç istatistiklerinden hesaplanır; kesin sonuç garantisi değildir.",
+                  Spacer(Modifier.height(12.dp))
+                  Text("TAKIM FORMU", color = Gold,
+                      fontWeight = FontWeight.Bold)
+                  TeamFormSection(m.home, homeForm)
+                  Spacer(Modifier.height(6.dp))
+                  TeamFormSection(m.away, awayForm)
+
+                  Spacer(Modifier.height(10.dp))
+                  Text("SON MAÇ İSTATİSTİK ORTALAMALARI",
+                      color = Gold, fontWeight = FontWeight.Bold)
+
+                  Text("${m.home} (${homeStatsAverage?.games ?: 0} maç)",
+                      color = GoldLight, fontWeight = FontWeight.Bold)
+                  if (homeStatsAverage?.stats.isNullOrEmpty()) {
+                      Text("Ev sahibi istatistiği bulunamadı.",
+                          color = TextMuted, fontSize = 11.sp)
+                  } else {
+                      homeStatsAverage?.stats?.forEach { stat ->
+                          Text("${stat.name}: %.2f".format(
+                              java.util.Locale.US, stat.average
+                          ), color = TextMain, fontSize = 11.sp)
+                      }
+                  }
+
+                  Text("${m.away} (${awayStatsAverage?.games ?: 0} maç)",
+                      color = GoldLight, fontWeight = FontWeight.Bold)
+                  if (awayStatsAverage?.stats.isNullOrEmpty()) {
+                      Text("Deplasman istatistiği bulunamadı.",
+                          color = TextMuted, fontSize = 11.sp)
+                  } else {
+                      awayStatsAverage?.stats?.forEach { stat ->
+                          Text("${stat.name}: %.2f".format(
+                              java.util.Locale.US, stat.average
+                          ), color = TextMain, fontSize = 11.sp)
+                      }
+                  }
+
+                  Spacer(Modifier.height(10.dp))
+                  Text("BAHİS ORANLARI VE PAZARLAR",
+                      color = Gold, fontWeight = FontWeight.Bold)
+                  val displayOdds = odds ?: MatchOdds()
+                  Text("MS 1: ${displayOdds.home} | X: ${displayOdds.draw} | MS 2: ${displayOdds.away}",
+                      color = TextMain, fontSize = 11.sp)
+                  Text("2.5 Üst: ${displayOdds.over25} | 2.5 Alt: ${displayOdds.under25}",
+                      color = TextMain, fontSize = 11.sp)
+                  Text("KG Var: ${displayOdds.bttsYes} | KG Yok: ${displayOdds.bttsNo}",
+                      color = TextMain, fontSize = 11.sp)
+
+                  if (displayOdds.markets.isNotEmpty()) {
+                      displayOdds.markets.forEach { market ->
+                          Text(market.name, color = GoldLight,
+                              fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                          market.options.forEach { option ->
+                              Text("${option.selection}: ${option.odd}",
+                                  color = TextMain, fontSize = 10.sp)
+                          }
+                      }
+                  } else {
+                      Text("Ek bahis pazarı verisi bulunamadı.",
+                          color = TextMuted, fontSize = 10.sp)
+                  }
+
+                  Spacer(Modifier.height(8.dp))
+                  Text("VERİ DURUMU", color = Gold,
+                      fontWeight = FontWeight.Bold)
+                  Text("Ev sahibi formu: ${homeForm.size} maç",
+                      color = TextMain, fontSize = 11.sp)
+                  Text("Deplasman formu: ${awayForm.size} maç",
+                      color = TextMain, fontSize = 11.sp)
+                  Text("Ev sahibi istatistiği: ${homeStatsAverage?.stats?.size ?: 0} veri",
+                      color = TextMain, fontSize = 11.sp)
+                  Text("Deplasman istatistiği: ${awayStatsAverage?.stats?.size ?: 0} veri",
+                      color = TextMain, fontSize = 11.sp)
+                  Text("Oran durumu: ${
+                      if (hasUsableOdds(displayOdds)) "Alındı" else "Bulunamadı"
+                  }", color = TextMain, fontSize = 11.sp)
+
+                  Text("Kadro, sakatlık, hava ve hakem verileri henüz otomatik kaynağa bağlanmadı.",
+                      color = TextMuted, fontSize = 10.sp)
+
+                  Text("Tahmin mevcut takım formu, son maç istatistikleri ve bulunan oranlarla hesaplanır; kesin sonuç garantisi değildir.",
                       color = TextMuted, fontSize = 10.sp)
               }
             }
