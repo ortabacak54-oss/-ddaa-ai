@@ -821,6 +821,8 @@ private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> U
     var statsError by remember(m.id) { mutableStateOf("") }
     var formLoaded by remember(m.id) { mutableStateOf(false) }
       var analysisDone by remember(m.id) { mutableStateOf(false) }
+    var autoAnalysisLoading by remember(m.id) { mutableStateOf(false) }
+    var autoAnalysisError by remember(m.id) { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     Card(
@@ -1044,6 +1046,123 @@ private fun LiveMatchCard(m: LiveMatch, onAutoAdd: (String, Double, String) -> U
                   )
               ) {
                   Text("ANALİZ ET", fontWeight = FontWeight.Bold)
+              }
+
+
+              Spacer(Modifier.height(10.dp))
+              Button(
+                  onClick = {
+                      scope.launch {
+                          autoAnalysisLoading = true
+                          autoAnalysisError = ""
+                          formError = ""
+                          statsError = ""
+                          oddsError = ""
+
+                          try {
+                              val forms = withContext(Dispatchers.IO) {
+                                  Pair(
+                                      LiveApi.getTeamForm(m.homeId),
+                                      LiveApi.getTeamForm(m.awayId)
+                                  )
+                              }
+                              homeForm = forms.first
+                              awayForm = forms.second
+                              formLoaded = true
+
+                              val averages = withContext(Dispatchers.IO) {
+                                  Pair(
+                                      LiveApi.getTeamStatsAverage(m.homeId, 5, forms.first),
+                                      LiveApi.getTeamStatsAverage(m.awayId, 5, forms.second)
+                                  )
+                              }
+                              homeStatsAverage = averages.first
+                              awayStatsAverage = averages.second
+
+                              val matchOdds = try {
+                                  withContext(Dispatchers.IO) {
+                                      LiveApi.getOdds(m.id)
+                                  }
+                              } catch (e: Exception) {
+                                  oddsError = e.message ?: "Oran bulunamadı"
+                                  MatchOdds()
+                              }
+                              odds = matchOdds
+
+                              val result = PredictionEngine.calculate(
+                                  matchOdds,
+                                  forms.first,
+                                  forms.second,
+                                  m.home,
+                                  m.away,
+                                  averages.first,
+                                  averages.second
+                              )
+
+                              val markets = listOf(
+                                  "MS 1" to (result.home ?: 0.0),
+                                  "MS X" to (result.draw ?: 0.0),
+                                  "MS 2" to (result.away ?: 0.0),
+                                  "2.5 Alt" to (result.under25 ?: 0.0),
+                                  "2.5 Üst" to (result.over25 ?: 0.0),
+                                  "KG Var" to (result.bttsYes ?: 0.0),
+                                  "KG Yok" to (result.bttsNo ?: 0.0)
+                              )
+                              val best = markets.maxByOrNull { it.second }
+
+                              if (best != null) {
+                                  onAutoAdd(best.first, best.second, result.predictedScore)
+                              }
+
+                              onSaveAnalysis(
+                                  AnalysisRecord(
+                                      id = "${m.id}_${System.currentTimeMillis()}",
+                                      matchId = m.id,
+                                      fixture = "${m.home} - ${m.away}",
+                                      predictedScore = result.predictedScore,
+                                      ms1 = result.home ?: 0.0,
+                                      msx = result.draw ?: 0.0,
+                                      ms2 = result.away ?: 0.0,
+                                      over25 = result.over25 ?: 0.0,
+                                      under25 = result.under25 ?: 0.0,
+                                      bttsYes = result.bttsYes ?: 0.0,
+                                      bttsNo = result.bttsNo ?: 0.0,
+                                      oddsNote = if (hasUsableOdds(matchOdds))
+                                          "Otomatik analiz: oranlar ve istatistikler kullanıldı."
+                                      else
+                                          "Oran bulunamadı; tahmin istatistiksel verilerle oluşturuldu."
+                                  )
+                              )
+
+                              analysisDone = true
+                          } catch (e: Exception) {
+                              autoAnalysisError = e.message ?: "Otomatik analiz başarısız"
+                          } finally {
+                              autoAnalysisLoading = false
+                          }
+                      }
+                  },
+                  enabled = !autoAnalysisLoading && !formLoading &&
+                      !statsLoading && !oddsLoading,
+                  modifier = Modifier.fillMaxWidth(),
+                  colors = ButtonDefaults.buttonColors(
+                      containerColor = Color(0xFF245C48),
+                      contentColor = Color.White
+                  )
+              ) {
+                  Text(
+                      if (autoAnalysisLoading) "OTOMATİK ANALİZ YAPILIYOR..."
+                      else "OTOMATİK TAM ANALİZ",
+                      fontWeight = FontWeight.Bold
+                  )
+              }
+
+              if (autoAnalysisError.isNotBlank()) {
+                  Text(
+                      "Otomatik analiz hatası: $autoAnalysisError",
+                      color = Red,
+                      fontSize = 11.sp
+                  )
               }
 
               if (analysisDone &&
