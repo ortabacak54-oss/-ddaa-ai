@@ -65,7 +65,8 @@ object PredictionEngine {
     awayName: String = ""
     ,
         homeStats: TeamStatsAverage? = null,
-        awayStats: TeamStatsAverage? = null
+        awayStats: TeamStatsAverage? = null,
+        conditions: MatchConditions = MatchConditions()
     ): MarketPrediction {
 
         val homeRecent = homeForm.take(10)
@@ -103,8 +104,42 @@ object PredictionEngine {
                 .coerceIn(0.88, 1.12)
         }
 
-        val homeXg = ((homeAttack + awayDefence) / 2.0 * statFactor(homeStats)).coerceIn(0.20, 4.0)
-        val awayXg = ((awayAttack + homeDefence) / 2.0 * statFactor(awayStats)).coerceIn(0.20, 4.0)
+        val homeAttackAbsence = conditions.homeAttackAbsence.coerceIn(0.0, 1.0)
+        val homeDefenseAbsence = conditions.homeDefenseAbsence.coerceIn(0.0, 1.0)
+        val homeGoalkeeperAbsent = conditions.homeGoalkeeperAbsent.coerceIn(0.0, 1.0)
+
+        val awayAttackAbsence = conditions.awayAttackAbsence.coerceIn(0.0, 1.0)
+        val awayDefenseAbsence = conditions.awayDefenseAbsence.coerceIn(0.0, 1.0)
+        val awayGoalkeeperAbsent = conditions.awayGoalkeeperAbsent.coerceIn(0.0, 1.0)
+
+        val homeLineupFactor = 0.9 + conditions.homeLineupStrength.coerceIn(0.0, 1.0) * 0.2
+        val awayLineupFactor = 0.9 + conditions.awayLineupStrength.coerceIn(0.0, 1.0) * 0.2
+
+        val weatherFactor = 1.0 + conditions.weatherGoalImpact.coerceIn(-0.20, 0.05)
+        val homeTacticalFactor = 1.0 + conditions.homeTacticalAdvantage.coerceIn(-0.15, 0.15)
+        val awayTacticalFactor = 1.0 - conditions.homeTacticalAdvantage.coerceIn(-0.15, 0.15)
+
+        val homeConditionsFactor =
+            (1.0 - homeAttackAbsence * 0.18) *
+            (1.0 + awayDefenseAbsence * 0.12) *
+            (1.0 + awayGoalkeeperAbsent * 0.15) *
+            homeLineupFactor * homeTacticalFactor * weatherFactor
+
+        val awayConditionsFactor =
+            (1.0 - awayAttackAbsence * 0.18) *
+            (1.0 + homeDefenseAbsence * 0.12) *
+            (1.0 + homeGoalkeeperAbsent * 0.15) *
+            awayLineupFactor * awayTacticalFactor * weatherFactor
+
+        val homeXg = (
+            (homeAttack + awayDefence) / 2.0 *
+            statFactor(homeStats) * homeConditionsFactor
+        ).coerceIn(0.20, 4.0)
+
+        val awayXg = (
+            (awayAttack + homeDefence) / 2.0 *
+            statFactor(awayStats) * awayConditionsFactor
+        ).coerceIn(0.20, 4.0)
 
 
         val scoreMatrix = (0..6).flatMap { h ->

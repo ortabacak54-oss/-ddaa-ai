@@ -287,6 +287,17 @@ function doGet(e) {
     var source = data.data && data.data.matches
       ? data.data.matches : {};
 
+    if (e.parameter.debug === "lig") {
+      var firstId = Object.keys(source)[0];
+      return json({
+        durum: "debug",
+        ustAnahtarlar: Object.keys(data),
+        dataAnahtarlar: data.data ? Object.keys(data.data) : [],
+        macAnahtarlari: firstId ? Object.keys(source[firstId]) : [],
+        ilkMac: firstId ? source[firstId] : null
+      });
+    }
+
     var matches = Object.keys(source).map(function(id) {
       var x = source[id];
       var score = x.score || {};
@@ -311,8 +322,8 @@ function doGet(e) {
           : "",
         durum: status,
         dakika: "",
-        lig: "",
-        ulke: "",
+        lig: getLeagueName(x),
+        ulke: getCountryName(x),
         ev: x.homeTeam ? x.homeTeam.name : "",
         evId: x.homeTeam ? String(x.homeTeam.id || "") : "",
         deplasman: x.awayTeam ? x.awayTeam.name : "",
@@ -341,4 +352,51 @@ function doGet(e) {
       mesaj: String(err)
     });
   }
+}
+
+
+function getLeagueName(match) {
+  var keys = [
+    "competitionName", "leagueName", "tournamentName",
+    "competition", "league", "tournament", "championship"
+  ];
+
+  function find(obj, depth) {
+    if (!obj || typeof obj !== "object" || depth > 5) return "";
+    for (var i = 0; i < keys.length; i++) {
+      var value = obj[keys[i]];
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (value && typeof value === "object") {
+        if (typeof value.name === "string" && value.name.trim()) return value.name.trim();
+        var nested = find(value, depth + 1);
+        if (nested) return nested;
+      }
+    }
+    var names = ["name", "displayName", "shortName"];
+    for (var j = 0; j < names.length; j++) {
+      if (typeof obj[names[j]] === "string" && obj[names[j]].trim()) {
+        return obj[names[j]].trim();
+      }
+    }
+    for (var k in obj) {
+      if (obj.hasOwnProperty(k) && obj[k] && typeof obj[k] === "object") {
+        var result = find(obj[k], depth + 1);
+        if (result) return result;
+      }
+    }
+    return "";
+  }
+  return find(match, 0);
+}
+
+function getCountryName(match) {
+  var containers = [match.competition, match.league, match.tournament];
+  for (var i = 0; i < containers.length; i++) {
+    var c = containers[i];
+    if (c && typeof c === "object") {
+      if (typeof c.countryName === "string") return c.countryName;
+      if (c.country && typeof c.country === "object" && c.country.name) return c.country.name;
+    }
+  }
+  return match.countryName || "";
 }
